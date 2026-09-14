@@ -60,8 +60,8 @@ body[data-state="grail"]     .s-reveal    { display: block; }
 body[data-state="nopreview"] .s-nopreview { display: block; }
 body[data-state="idle"]      .pane-empty,
 body[data-state="nopreview"] .pane-nopreview { display: grid; }
-body:not([data-state="grail"]) .on-grail  { display: none !important; }
-body[data-state="grail"]       .off-grail { display: none !important; }
+body:not([data-grail="1"]) .on-grail  { display: none !important; }
+body[data-grail="1"]       .off-grail { display: none !important; }
 
 /* ============================================================
    top bar — reports the table, edits nothing
@@ -204,7 +204,7 @@ body[data-chips="empty"] .roll small { opacity: 1; }
   display: block; font-family: var(--mono); font-weight: 400; font-size: 1.6vh;
   color: var(--fg2); letter-spacing: 0; margin-bottom: 1vh;
 }
-body[data-state="grail"] .head .ttl { color: var(--gold); }
+body[data-grail="1"] .head .ttl { color: var(--gold); }
 body[data-state="rolling"] .head .ttl { color: var(--fg3); }
 .head .m { font-family: var(--mono); font-size: 1.6vh; color: var(--fg2); margin-top: 1.2vh; line-height: 1.6; }
 .pill {
@@ -440,7 +440,7 @@ body.settings .drawer { transform: translateX(0); }
 .keys span { color: var(--fg3); }
 </style>
 </head>
-<body data-state="idle" data-chips="ok">
+<body data-state="idle" data-chips="ok" data-grail="0">
 
 <!-- ========== top bar: reports the table, edits nothing ========== -->
 <div class="top">
@@ -1244,6 +1244,7 @@ function currentState() { return fuelInfo().rolls <= 0 ? 'nochips' : beat; }
 function setState(s) {
   beat = s;
   document.body.dataset.state = s;
+  document.body.dataset.grail = isGrail(current) ? '1' : '0';
   if (s === 'rolling') startCyclers(); else stopCyclers();
   renderTransport();
 }
@@ -1266,8 +1267,8 @@ function startCyclers() {
   renderCycler();
   const tick = () => document.querySelectorAll('.cyc').forEach(el => { el.textContent = POOLS[el.dataset.k](); });
   tick();
-  if (REDUCED.matches) return;   // reduced motion: one static set of values, no flicker
   clearInterval(cycTimer);
+  if (REDUCED.matches) return;   // reduced motion: one static set of values, no flicker
   cycTimer = setInterval(tick, 70);
 }
 function stopCyclers() { clearInterval(cycTimer); cycTimer = null; }
@@ -1559,11 +1560,10 @@ function renderDrawer() {
   $('v-token').textContent = maskToken($('token').value.trim());
   renderYears();
 }
-/* Changing the threshold re-decides every row already on the table. */
+/* Changing the threshold re-decides every pull already on the table. */
 function reflowGrail() {
-  if (current) document.body.dataset.state =
-    beat === 'nopreview' ? 'nopreview' : (isGrail(current) ? 'grail' : 'reveal');
-  if (current && beat !== 'nopreview') beat = document.body.dataset.state;
+  if (current && (beat === 'reveal' || beat === 'grail')) setState(isGrail(current) ? 'grail' : 'reveal');
+  else setState(beat);
   renderRun(); renderList(); renderDrawer();
 }
 function setGenre(v) {
