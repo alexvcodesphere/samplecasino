@@ -270,9 +270,15 @@ body.settings .scrim { opacity: 1; pointer-events: auto; }
   box-shadow: -3vw 0 8vw rgba(0,0,0,.6);
   transform: translateX(102%);
   transition: transform .28s cubic-bezier(.2,.8,.2,1);
-  padding: 4vh 2.4vw 12vh;
   font-family: var(--mono); font-size: 1.6vh; color: var(--fg2);
-  overflow: hidden auto;
+  display: flex; flex-direction: column;
+}
+/* The list scrolls; apply and the balance stay put, so the commit is always
+   one click away however far down the list you are. */
+.drawer-scroll { flex: 1; min-height: 0; overflow: hidden auto; padding: 4vh 2.4vw 2vh; }
+.drawer-foot {
+  flex: 0 0 auto; padding: 1.6vh 2.4vw 3vh;
+  background: #121215; border-top: 1px solid var(--line);
 }
 body.settings .drawer { transform: translateX(0); }
 .drawer h3 {
@@ -281,15 +287,11 @@ body.settings .drawer { transform: translateX(0); }
 }
 .drawer .sub { color: var(--fg3); margin-bottom: 2.4vh; }
 .drawer .x {
-  position: absolute; right: 2.4vw; top: 3.6vh; width: 4vh; height: 4vh;
-  border-radius: 50%; border: 1px solid rgba(236,233,226,.25); background: none;
+  position: absolute; right: 2.4vw; top: 3.6vh; z-index: 2; width: 4vh; height: 4vh;
+  border-radius: 50%; border: 1px solid rgba(236,233,226,.25); background: #121215;
   color: var(--fg); font-size: 2vh; display: grid; place-items: center;
 }
-.drawer .foot {
-  position: fixed; right: 0; bottom: 0; width: 34vw;
-  padding: 2vh 2.4vw 4vh; background: #121215;
-  display: flex; justify-content: space-between; gap: 1vw; color: var(--fg3);
-}
+.drawer .foot { display: flex; justify-content: space-between; gap: 1vw; color: var(--fg3); }
 .drawer .foot b { color: var(--fg); font-weight: 400; }
 
 /* ============================================================
@@ -341,8 +343,10 @@ body.settings .drawer { transform: translateX(0); }
   .cam { display: none; }
   .chips i { width: 8px; height: 8px; }
   .gear { height: 34px; font-size: 12px; padding: 0 14px; gap: 6px; }
-  .drawer { width: min(92vw, 420px); font-size: 13px; padding: 24px 20px 90px; }
-  .drawer .foot { width: min(92vw, 420px); padding: 14px 20px 24px; }
+  .drawer { width: min(92vw, 420px); font-size: 13px; padding: 0; }
+  .drawer-scroll { padding: 24px 20px 16px; }
+  .drawer-foot { padding: 12px 20px 20px; }
+  #list-history, #list-favs { max-height: 240px; }
   .drawer h3 { font-size: 22px; }
   .drawer .x { width: 32px; height: 32px; font-size: 17px; right: 20px; top: 20px; }
 }
@@ -350,12 +354,6 @@ body.settings .drawer { transform: translateX(0); }
 /* ============================================================
    drawer contents
    ============================================================ */
-.dtabs { display: flex; gap: 1.6vw; margin: 0 0 2.8vh; }
-.dtabs button {
-  background: none; border: none; padding: 0 0 .8vh; font: inherit;
-  color: var(--fg3); border-bottom: 1px solid transparent;
-}
-.dtabs button.active { color: var(--fg); border-bottom-color: var(--acid); }
 .drawer h4 { font-family: var(--mono); font-weight: 400; font-size: 1.5vh; color: var(--fg3); margin: 3vh 0 1.2vh; }
 .mini { font-size: 1.35vh; color: var(--fg3); line-height: 1.6; margin: 1.2vh 0 0; display: block; }
 
@@ -420,7 +418,7 @@ body.settings .drawer { transform: translateX(0); }
 /* apply bar — the filters above it are a draft until this commits them */
 .apply-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 1vw;
-  padding: 2vh 0 .4vh;
+  padding: 0 0 1.6vh;
 }
 .apply-note { color: var(--fg3); font-size: 1.35vh; line-height: 1.5; }
 .apply-note.pending { color: var(--acid); }
@@ -436,10 +434,8 @@ body.settings .drawer { transform: translateX(0); }
   background: var(--acid); display: block;
 }
 
-/* history / favorites */
-.tabs { display: flex; gap: 1.4vw; margin: 0 0 .6vh; }
-.tabs button { background: none; border: none; padding: 0; font: inherit; color: var(--fg3); }
-.tabs button.active { color: var(--acid); }
+/* history / favorites — capped so one long list can't swallow the drawer */
+#list-history, #list-favs { max-height: 32vh; overflow: hidden auto; }
 .track-row { display: flex; gap: 1.2vh; align-items: center; padding: 1vh 0; border-top: 1px solid var(--line); width: 100%; background: none; border-left: 0; border-right: 0; border-bottom: 0; text-align: left; font: inherit; color: inherit; }
 .track-row:hover { background: rgba(236,233,226,.04); }
 .track-row img { width: 3.6vh; height: 3.6vh; border-radius: 2px; object-fit: cover; background: rgba(236,233,226,.07); flex: 0 0 auto; }
@@ -450,6 +446,8 @@ body.settings .drawer { transform: translateX(0); }
 .track-row.g .mult { color: var(--gold); }
 .empty { color: var(--fg3); padding: 2vh 0; }
 .statline { display: flex; justify-content: space-between; align-items: center; gap: 1vw; padding: 1.4vh 0; border-top: 1px solid var(--line); color: var(--fg3); }
+.statline.plain { border-top: 0; padding-top: 0; }
+.row-body > .opt { margin-top: 1.4vh; }
 .statline b { color: var(--fg); font-weight: 400; }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: .9vh 1.2vw; font-size: 1.45vh; }
 .keys kbd {
@@ -537,14 +535,9 @@ body.settings .drawer { transform: translateX(0); }
 <aside class="drawer" id="drawer" aria-hidden="true">
   <button class="x" id="drawer-close" aria-label="Close settings">×</button>
 
-  <div class="dtabs">
-    <button id="dtab-table" class="active">Table</button>
-    <button id="dtab-log">Log</button>
-  </div>
-
-  <section id="sec-table">
-    <h3>Table</h3>
-    <div class="sub">what the roll can land on</div>
+  <div class="drawer-scroll">
+    <h3>Settings</h3>
+    <div class="sub">what the roll can land on, and what it has landed on</div>
 
     <div class="row" data-row="genre" data-open="false">
       <button class="row-head"><span>genre</span><span class="val" id="v-genre">any</span></button>
@@ -581,13 +574,6 @@ body.settings .drawer { transform: translateX(0); }
       <div class="row-body"><div class="opts" id="opts-format"></div></div>
     </div>
 
-    <div class="apply-bar">
-      <div class="apply-note" id="apply-note">these are the filters the roll uses</div>
-      <button class="apply" id="btn-apply" disabled>apply</button>
-    </div>
-
-    <h4>run</h4>
-
     <div class="row" data-row="runlen" data-open="false">
       <button class="row-head"><span>pulls per run</span><span class="val" id="v-runlen">endless</span></button>
       <div class="row-body"><div class="opts" id="opts-runlen"></div></div>
@@ -609,33 +595,49 @@ body.settings .drawer { transform: translateX(0); }
         <span class="mini">A free token raises the limit from 25 to 60 Discogs requests a minute — roughly 6 chips to 14 — and unlocks Discogs cover art, which unauthenticated search does not return. discogs.com → Settings → Developers.</span>
       </div>
     </div>
-  </section>
 
-  <section id="sec-log" hidden>
-    <h3>Log</h3>
-    <div class="sub">what this session has pulled</div>
-    <div class="tabs">
-      <button id="tab-history" class="active">History</button>
-      <button id="tab-favs">Favorites</button>
+    <div class="row" data-row="thisrun" data-open="false">
+      <button class="row-head"><span>this run</span><span class="val" id="v-thisrun">0 pulls</span></button>
+      <div class="row-body">
+        <div class="statline plain" id="session-stats"></div>
+        <button class="opt" id="btn-new-run">start a new run</button>
+      </div>
     </div>
-    <div id="list"></div>
-    <div class="statline" id="session-stats"></div>
-    <div class="statline">
-      <span>this run <b id="run-count">0</b> pulls</span>
-      <button class="opt" id="btn-new-run">new run</button>
-    </div>
-    <div class="statline">
-      <span>tempo <b id="bpm-val">—</b> BPM <span id="bpm-hint">· tap R along with the beat</span></span>
-      <button class="opt" id="btn-tap-reset">reset</button>
-    </div>
-    <h4>shortcuts</h4>
-    <div class="keys" id="keys"></div>
-  </section>
 
-  <div class="foot">
-    <span>chips <b id="foot-chips">—</b></span>
-    <span id="foot-refill">refill <b>—</b></span>
-    <span>table <b id="foot-table">—</b></span>
+    <div class="row" data-row="history" data-open="false">
+      <button class="row-head"><span>history</span><span class="val" id="v-history">0</span></button>
+      <div class="row-body"><div id="list-history"></div></div>
+    </div>
+
+    <div class="row" data-row="favs" data-open="false">
+      <button class="row-head"><span>favorites</span><span class="val" id="v-favs">0</span></button>
+      <div class="row-body"><div id="list-favs"></div></div>
+    </div>
+
+    <div class="row" data-row="tempo" data-open="false">
+      <button class="row-head"><span>tempo</span><span class="val" id="v-tempo">— BPM</span></button>
+      <div class="row-body">
+        <span class="mini">Tap R along with the beat. The last eight taps are averaged.</span>
+        <button class="opt" id="btn-tap-reset">reset</button>
+      </div>
+    </div>
+
+    <div class="row" data-row="keys" data-open="false">
+      <button class="row-head"><span>shortcuts</span><span class="val" id="v-keys">9</span></button>
+      <div class="row-body"><div class="keys" id="keys"></div></div>
+    </div>
+  </div>
+
+  <div class="drawer-foot">
+    <div class="apply-bar">
+      <div class="apply-note" id="apply-note">these are the filters the roll uses</div>
+      <button class="apply" id="btn-apply" disabled>apply</button>
+    </div>
+    <div class="foot">
+      <span>chips <b id="foot-chips">—</b></span>
+      <span id="foot-refill">refill <b>—</b></span>
+      <span>table <b id="foot-table">—</b></span>
+    </div>
   </div>
 </aside>
 
@@ -650,7 +652,6 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 let current = null;              // {artist,title,release,year,country,label,videoId,watchUrl,discogsUrl,cover,mult,…}
 let history = [];                // newest first
 let favs = JSON.parse(localStorage.getItem('digger_favs') || '[]');
-let activeTab = 'history';
 let player = null, playerReady = false;
 let deadVideos = new Set();      // videoIds that failed to embed this session — never re-served
 /* Grail odds are sampled from this session's own pulls rather than probed —
@@ -1141,12 +1142,15 @@ function updateFavBtn() {
   $('btn-fav').textContent = on ? '♥' : '♡';
 }
 function renderList() {
-  const items = activeTab === 'history' ? history : favs;
-  const list = $('list');
+  drawList($('list-history'), history, 'No pulls yet.');
+  drawList($('list-favs'), favs, 'No favorites yet — hit ♡ on one you like.');
+  $('v-history').textContent = history.length;
+  $('v-favs').textContent = favs.length;
+}
+function drawList(list, items, emptyCopy) {
   list.innerHTML = '';
   if (!items.length) {
-    list.innerHTML = '<div class="empty">' +
-      (activeTab === 'history' ? 'No pulls yet.' : 'No favorites yet — hit ♡ on one you like.') + '</div>';
+    list.innerHTML = '<div class="empty">' + emptyCopy + '</div>';
     return;
   }
   items.forEach(t => {
@@ -1173,6 +1177,7 @@ function renderList() {
     list.appendChild(el);
   });
 }
+
 
 /* ---------- head ---------- */
 function renderHead(t) {
@@ -1295,7 +1300,7 @@ function renderPick() {
     ? (picked ? 'picked pull ' + pad(picked.n) : 'chat picks any time')
     : (canPick() ? 'pick a winner' : 'chat picks after ' + pad(n));
   $('btn-flip').classList.toggle('on', canPick() && picked !== null);
-  $('run-count').textContent = pullNo;
+  $('v-thisrun').textContent = pullNo + (pullNo === 1 ? ' pull' : ' pulls');
 }
 
 /* The transport's sub-label is the one place the next action is spelled out,
@@ -1469,9 +1474,9 @@ function renderSession() {
     : session.grails ? '1 in ' + Math.round(session.pulls / session.grails)
     : 'none in ' + session.pulls;
   $('session-stats').innerHTML =
-    '<span><b>' + session.pulls + '</b> pull' + (session.pulls === 1 ? '' : 's') +
+    '<span>session <b>' + session.pulls + '</b> pull' + (session.pulls === 1 ? '' : 's') +
     ' · <b>' + session.grails + '</b> grail' + (session.grails === 1 ? '' : 's') + '</span>' +
-    '<span>grail odds <b>' + odds + '</b></span>';
+    '<span>odds <b>' + odds + '</b></span>';
 }
 
 /* ---------- tap tempo ----------
@@ -1487,14 +1492,13 @@ function tap() {
   for (let i = 1; i < taps.length; i++) iv.push(taps[i] - taps[i - 1]);
   const recent = iv.slice(-8);
   const bpm = Math.round(60000 / (recent.reduce((a, b) => a + b, 0) / recent.length));
-  $('bpm-val').textContent = bpm;
-  $('bpm-hint').textContent = '';
+  $('v-tempo').textContent = bpm + ' BPM';
   toast(bpm + ' BPM');
 }
 $('btn-tap-reset').onclick = () => {
   taps = [];
-  $('bpm-val').textContent = '—';
-  $('bpm-hint').textContent = '· tap R along with the beat';
+  $('v-tempo').textContent = '— BPM';
+  toast('Tempo cleared');
 };
 
 /* ---------- download ---------- */
@@ -1568,14 +1572,6 @@ $('btn-flip').onclick = () => {
 };
 $('btn-fav').onclick = toggleFav;
 $('btn-download').onclick = downloadAudio;
-$('tab-history').onclick = () => switchTab('history');
-$('tab-favs').onclick = () => switchTab('favs');
-function switchTab(t) {
-  activeTab = t;
-  $('tab-history').classList.toggle('active', t === 'history');
-  $('tab-favs').classList.toggle('active', t === 'favs');
-  renderList();
-}
 $('f-grail').addEventListener('change', e => {
   settings.grailThreshold = Math.min(20, Math.max(1, parseFloat(e.target.value) || 1.5));
   e.target.value = settings.grailThreshold;
@@ -1653,7 +1649,10 @@ function renderDrawer() {
   $('v-runlen').textContent = runLengthLabel(settings.runLength);
   $('v-grail').textContent = settings.grailThreshold + '\u00d7';
   $('v-token').textContent = maskToken($('token').value.trim());
-  $('run-count').textContent = pullNo;
+  $('v-thisrun').textContent = pullNo + (pullNo === 1 ? ' pull' : ' pulls');
+  $('v-history').textContent = history.length;
+  $('v-favs').textContent = favs.length;
+  $('v-keys').textContent = SHORTCUTS.length;
   renderYears();
   renderApply();
 }
@@ -1712,17 +1711,6 @@ document.querySelectorAll('.row .row-head').forEach(head => {
     if (!open) { const f = row.querySelector('input'); if (f) f.focus(); }
   };
 });
-
-/* drawer sections */
-function showSection(name) {
-  const table = name === 'table';
-  $('sec-table').hidden = !table;
-  $('sec-log').hidden = table;
-  $('dtab-table').classList.toggle('active', table);
-  $('dtab-log').classList.toggle('active', !table);
-}
-$('dtab-table').onclick = () => showSection('table');
-$('dtab-log').onclick = () => showSection('log');
 
 /* ---------- year range: two handles on one track ---------- */
 const YR_MIN = 1900, YR_MAX = new Date().getFullYear() + 1;
