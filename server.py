@@ -114,7 +114,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path == '/config':
             # Whether a token exists, never the token itself.
             self.send_json(200, {'serverToken': bool(DISCOGS_TOKEN)})
-        elif parsed.path == '/discogs':
+        elif parsed.path == '/discogs' or parsed.path.startswith('/discogs/'):
             self.handle_discogs(parsed)
         elif parsed.path == '/download':
             self.handle_download(parsed)
@@ -128,17 +128,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_json(404, {'error': 'No server-side Discogs token configured.'})
             return
 
-        qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
-        # The Discogs path travels in its own parameter; everything else is
-        # forwarded as the query. Discogs has no parameter called "path".
-        path = (qs.pop('path', None) or [''])[0]
+        # The Discogs path is carried in our own path, and the query is passed
+        # through untouched. It used to travel in a "path" parameter, which
+        # Codesphere's edge 403s unless it happens to be the first parameter in
+        # the query string — not a thing worth depending on, and invisible
+        # locally because only the edge does it.
+        #
+        # parsed.path is NOT unquoted, so an encoded traversal stays encoded and
+        # simply fails to match below rather than slipping through as "..".
+        path = parsed.path[len('/discogs'):]
         if not DISCOGS_PATH_RE.match(path):
             self.send_json(400, {'error': 'Unsupported Discogs path.'})
             return
 
-        query = urllib.parse.urlencode([(k, v) for k, vs in qs.items() for v in vs])
         req = urllib.request.Request(
-            DISCOGS_API + path + ('?' + query if query else ''),
+            DISCOGS_API + path + ('?' + parsed.query if parsed.query else ''),
             headers={
                 'Authorization': 'Discogs token=' + DISCOGS_TOKEN,
                 'User-Agent': DISCOGS_UA,

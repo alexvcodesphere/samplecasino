@@ -690,9 +690,8 @@ function apiHeaders() {
 function apiUrl(url) {
   if (!usingProxy()) return url;
   const u = new URL(url);
-  const p = new URLSearchParams(u.search);
-  p.set('path', u.pathname);
-  return '/discogs?' + p;
+  // Discogs' path becomes part of ours, and the query is passed through as-is.
+  return '/discogs' + u.pathname + u.search;
 }
 /* meta:true — counts against the rate limit but not against the observed
    per-pull request cost, so the table-count probes don't distort the chip math. */
@@ -713,6 +712,9 @@ async function api(url, opts) {
     throw new Error('rate');
   }
   if (res.status === 429) { rlBlockedUntil = Date.now() + 30000; updateFuel(); throw new Error('rate'); }
+  // 401/403 is a credential or gateway refusal, not a hiccup — worth saying so
+  // rather than leaving a bare status in the console for someone to decode.
+  if (res.status === 401 || res.status === 403) throw new Error('auth');
   if (!res.ok) throw new Error('http ' + res.status);
   return res.json();
 }
@@ -1085,7 +1087,11 @@ async function digOnce() {
       ? { ok: false, reason: 'nopreview', pull: pullFrom(lastRel, lastItem, null, null) }
       : { ok: false, reason: 'empty' };
   } catch (e) {
-    return { ok: false, reason: e.message === 'rate' ? 'rate' : 'error', message: e.message };
+    return {
+      ok: false,
+      reason: ['rate', 'auth'].includes(e.message) ? e.message : 'error',
+      message: e.message
+    };
   } finally {
     digging = false;
   }
@@ -1484,6 +1490,13 @@ function commitPull(res, back) {
     toast(haveToken()
       ? 'Out of chips — the table refills within a minute.'
       : 'Out of chips — the table refills within a minute. A free Discogs token in settings raises the limit.');
+  } else if (res.reason === 'auth') {
+    setState(back);
+    toast(usingProxy()
+      ? 'Discogs refused the request. The server\'s DISCOGS_TOKEN may be wrong or expired.'
+      : localToken()
+        ? 'Discogs refused your token — check it in settings.'
+        : 'Discogs refused the request.');
   } else if (res.reason === 'busy') {
     setState(back);
   } else {
