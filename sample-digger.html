@@ -236,9 +236,10 @@ body[data-state="rolling"] .head .ttl { color: var(--fg3); }
 .runs td.r { text-align: right; width: 8vw; white-space: nowrap; }
 .runs tr.cur td { background: rgba(201,242,74,.07); }
 .runs tr.cur td.n { color: var(--acid); }
-.runs tr.g td.t, .runs tr.g td.r, .runs tr.g td.n { color: var(--gold); }
+.runs tr.g td.r, .runs tr.g td.n { color: var(--gold); }
 .runs tr.next td { color: var(--fg3); font-style: italic; }
 body[data-state="rolling"] .runs tr.cur td.t,
+body[data-state="rolling"] .runs tr.cur td.n,
 body[data-state="rolling"] .runs tr.cur td.r { color: var(--fg3); }
 .runs tr.pickable { cursor: pointer; }
 .runs tr.pickable:hover td { background: rgba(236,233,226,.05); }
@@ -956,7 +957,7 @@ function renderList() {
 
 /* ---------- head ---------- */
 function renderHead(t) {
-  $('h-line1').textContent = ['pull ' + pad(runNo()), t.year, t.country].filter(v => v && v !== '—').join(' · ');
+  $('h-line1').textContent = ['pull ' + pad(runNo(t)), t.year, t.country].filter(v => v && v !== '—').join(' · ');
   $('h-title').textContent = t.release;
   $('h-meta').textContent = [t.artist, t.label, t.catno].filter(v => v && v !== '—').join(' · ');
   if (t.mult == null) {
@@ -969,17 +970,80 @@ function renderHead(t) {
 }
 function pad(n) { return String(n).padStart(2, '0'); }
 
-/* ---------- run model (phase 4) ---------- */
+/* ---------- the run ----------
+   A run is `settings.runLength` pulls. It is the only piece of state the
+   redesign adds: everything else on the page is a view of it. */
 let run = [];
-function runNo() { return run.length || 1; }
+let picked = null;               // index of the row chat has picked, once the run is complete
+function runNo(t) {
+  const i = t ? run.indexOf(t) : -1;
+  return i >= 0 ? i + 1 : (run.length || 1);
+}
 function runComplete() { return run.length >= settings.runLength; }
-function newRun() { run = []; current = null; renderRun(); }
-/* Placeholder until phase 4: the table always shows the next, empty pull. */
+function newRun() { run = []; picked = null; current = null; renderRun(); }
+
+function thumbFor(t) {
+  return t.cover || (t.videoId ? 'https://i.ytimg.com/vi/' + t.videoId + '/default.jpg' : '');
+}
+function cell(cls, node) {
+  const td = document.createElement('td');
+  td.className = cls;
+  if (node != null) td.append(node);
+  return td;
+}
+function runRow(t, i) {
+  const tr = document.createElement('tr');
+  const complete = runComplete() && beat !== 'rolling';
+  tr.className = [
+    t === current ? 'cur' : '',
+    isGrail(t) ? 'g' : '',
+    complete ? 'pickable' : '',
+    picked === i ? 'picked' : ''
+  ].filter(Boolean).join(' ');
+
+  const src = thumbFor(t);
+  const thumb = document.createElement(src ? 'img' : 'div');
+  if (src) { thumb.src = src; thumb.alt = ''; thumb.loading = 'lazy'; }
+
+  const title = document.createElement('span');
+  title.textContent = t.release;
+  const sub = document.createElement('small');
+  sub.textContent = [t.artist, t.year, t.country].filter(v => v && v !== '—').join(' · ');
+  const t_ = cell('t'); t_.append(title, sub);
+
+  tr.append(cell('n', document.createTextNode(pad(i + 1))), cell('th', thumb), t_,
+            cell('r', document.createTextNode(t.mult == null ? '—' : t.mult.toFixed(1) + '×')));
+
+  if (complete) {
+    tr.onclick = () => { picked = i; renderRun(); };
+    tr.tabIndex = 0;
+    tr.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); picked = i; renderRun(); } };
+  }
+  return tr;
+}
+/* The pull being rolled already has a row — dim, in place — so the table
+   doesn't jump when it resolves. */
+function blankRow(n, cls, label) {
+  const tr = document.createElement('tr');
+  tr.className = cls;
+  tr.append(cell('n', document.createTextNode(pad(n))), cell('th'),
+            cell('t', document.createTextNode(label)), cell('r'));
+  return tr;
+}
 function renderRun() {
-  $('run-body').innerHTML =
-    '<tr class="next"><td class="n">' + pad(run.length + 1) + '</td>' +
-    '<td class="th"></td><td class="t">\u2014</td><td class="r"></td></tr>';
-  $('pick-left').textContent = 'chat picks after ' + pad(settings.runLength);
+  const tb = $('run-body');
+  tb.innerHTML = '';
+  run.forEach((t, i) => tb.appendChild(runRow(t, i)));
+  if (beat === 'rolling') tb.appendChild(blankRow(run.length + 1, 'cur next', 'pulling…'));
+  else if (!runComplete()) tb.appendChild(blankRow(run.length + 1, 'next', '—'));
+  renderPick();
+}
+function renderPick() {
+  const complete = runComplete() && beat !== 'rolling';
+  $('pick-left').textContent = complete
+    ? 'pick a winner'
+    : 'chat picks after ' + pad(settings.runLength);
+  $('btn-flip').classList.toggle('on', complete && picked !== null);
 }
 
 /* The transport's sub-label is the one place the next action is spelled out,
@@ -988,6 +1052,8 @@ function renderTransport() {
   const f = fuelInfo();
   if (f.rolls <= 0) {
     $('roll-sub').textContent = 'refill ' + clock(refillIn(f) || 60);
+  } else if (runComplete() && beat !== 'rolling') {
+    $('roll-sub').textContent = 'new run \u00b7 space';
   } else {
     $('roll-sub').textContent = 'pull ' + pad(run.length + 1) + ' \u00b7 space';
   }
@@ -1187,6 +1253,12 @@ function toast(msg) {
 
 /* ---------- wiring ---------- */
 $('btn-roll').onclick = roll;
+/* TODO: "flip" is out of scope for this pass — what it does to the picked
+   record has not been specified yet. Wired here so the affordance is real. */
+$('btn-flip').onclick = () => {
+  if (picked === null || !runComplete()) return;
+  toast('Picked ' + run[picked].release + ' — flip is not wired up yet.');
+};
 $('btn-fav').onclick = toggleFav;
 $('btn-download').onclick = downloadAudio;
 $('tab-history').onclick = () => switchTab('history');
