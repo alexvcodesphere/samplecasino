@@ -417,6 +417,25 @@ body.settings .drawer { transform: translateX(0); }
 .cac-opt mark { background: none; color: var(--acid); }
 .cac-empty { padding: .9vh 1.2vh; color: var(--fg3); font-size: 1.35vh; }
 
+/* apply bar — the filters above it are a draft until this commits them */
+.apply-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 1vw;
+  padding: 2vh 0 .4vh;
+}
+.apply-note { color: var(--fg3); font-size: 1.35vh; line-height: 1.5; }
+.apply-note.pending { color: var(--acid); }
+.apply {
+  flex: 0 0 auto; border: none; border-radius: 999px; padding: 1vh 2vh;
+  background: var(--acid); color: #0b0b0d; font: inherit; font-weight: 700; font-size: 1.5vh;
+}
+.apply:hover:not(:disabled) { background: #d7ff5e; }
+.apply:disabled { background: rgba(236,233,226,.1); color: var(--fg3); cursor: default; }
+/* the gear carries a dot while a draft is waiting to be applied */
+.gear.pending::after {
+  content: ""; width: .8vh; height: .8vh; border-radius: 50%;
+  background: var(--acid); display: block;
+}
+
 /* history / favorites */
 .tabs { display: flex; gap: 1.4vw; margin: 0 0 .6vh; }
 .tabs button { background: none; border: none; padding: 0; font: inherit; color: var(--fg3); }
@@ -502,7 +521,7 @@ body.settings .drawer { transform: translateX(0); }
 
 <!-- ========== run table ========== -->
 <div class="runs">
-  <div class="lab"><span>this run</span><span>want / have</span></div>
+  <div class="lab"><span id="runs-label">this run</span><span>want / have</span></div>
   <table><tbody id="run-body"></tbody></table>
   <div class="pick">
     <span id="pick-left">chat picks after 03</span>
@@ -550,8 +569,6 @@ body.settings .drawer { transform: translateX(0); }
         <i class="h" id="yr-a" role="slider" tabindex="0" aria-label="Earliest year"></i>
         <i class="h" id="yr-b" role="slider" tabindex="0" aria-label="Latest year"></i>
       </div>
-      <input id="f-year-from" type="hidden" value="1965">
-      <input id="f-year-to" type="hidden" value="1985">
     </div>
 
     <div class="row" data-row="country" data-open="false">
@@ -564,8 +581,15 @@ body.settings .drawer { transform: translateX(0); }
       <div class="row-body"><div class="opts" id="opts-format"></div></div>
     </div>
 
+    <div class="apply-bar">
+      <div class="apply-note" id="apply-note">these are the filters the roll uses</div>
+      <button class="apply" id="btn-apply" disabled>apply</button>
+    </div>
+
+    <h4>run</h4>
+
     <div class="row" data-row="runlen" data-open="false">
-      <button class="row-head"><span>pulls per run</span><span class="val" id="v-runlen">3</span></button>
+      <button class="row-head"><span>pulls per run</span><span class="val" id="v-runlen">endless</span></button>
       <div class="row-body"><div class="opts" id="opts-runlen"></div></div>
     </div>
 
@@ -596,6 +620,10 @@ body.settings .drawer { transform: translateX(0); }
     </div>
     <div id="list"></div>
     <div class="statline" id="session-stats"></div>
+    <div class="statline">
+      <span>this run <b id="run-count">0</b> pulls</span>
+      <button class="opt" id="btn-new-run">new run</button>
+    </div>
     <div class="statline">
       <span>tempo <b id="bpm-val">—</b> BPM <span id="bpm-hint">· tap R along with the beat</span></span>
       <button class="opt" id="btn-tap-reset">reset</button>
@@ -632,7 +660,7 @@ let digging = false;
 
 /* ---------- settings ---------- */
 const settings = Object.assign(
-  { runLength: 3, grailThreshold: 1.5 },
+  { runLength: 0, grailThreshold: 1.5 },   // 0 = endless, the default
   JSON.parse(localStorage.getItem('casino_settings') || '{}')
 );
 function saveSettings() { localStorage.setItem('casino_settings', JSON.stringify(settings)); }
@@ -716,31 +744,46 @@ setInterval(updateFuel, 1000);
 const GENRES = ['', 'Funk / Soul', 'Jazz', 'Electronic', 'Hip Hop', 'Rock', 'Latin', 'Reggae', 'Pop',
   'Blues', 'Folk, World, & Country', 'Stage & Screen', 'Classical', 'Non-Music', 'Brass & Military', "Children's"];
 const FORMATS = [['Vinyl', 'vinyl only'], ['', 'any format']];
-const filters = { genre: '', format: 'Vinyl' };
+/* ---------- filters: committed vs draft ----------
+   `filters` is what the roll and the top bar use. `draft` is what the drawer is
+   showing. They diverge only between an edit and Apply, which keeps the overlay
+   honest: the top bar always describes the table the next ROLL will actually
+   land on, never one you are still half-way through choosing. */
+const DEFAULT_FILTERS = { genre: '', style: '', country: '', format: 'Vinyl', yearFrom: 1965, yearTo: 1985 };
+let filters = Object.assign({}, DEFAULT_FILTERS);
+let draft = Object.assign({}, filters);
 
-function filterParams(year) {
+function paramsFor(f, year) {
   const p = new URLSearchParams({ type: 'release', per_page: '25' });
-  const g = filters.genre, s = $('f-style').value.trim(),
-        c = $('f-country').value.trim(), f = filters.format;
-  if (g) p.set('genre', g);
-  if (s) p.set('style', s);
-  if (c) p.set('country', c);
-  if (f) p.set('format', f);
+  if (f.genre) p.set('genre', f.genre);
+  if (f.style.trim()) p.set('style', f.style.trim());
+  if (f.country.trim()) p.set('country', f.country.trim());
+  if (f.format) p.set('format', f.format);
   if (year) p.set('year', year);
   return p;
 }
-function yearRange() {
-  let a = parseInt($('f-year-from').value), b = parseInt($('f-year-to').value);
+function filterParams(year) { return paramsFor(filters, year); }
+function rangeOf(f) {
+  const a = parseInt(f.yearFrom), b = parseInt(f.yearTo);
   if (isNaN(a) && isNaN(b)) return null;
-  if (isNaN(a)) a = b; if (isNaN(b)) b = a;
-  if (a > b) [a, b] = [b, a];
-  return [a, b];
+  const lo = isNaN(a) ? b : a, hi = isNaN(b) ? a : b;
+  return lo > hi ? [hi, lo] : [lo, hi];
 }
+function yearRange() { return rangeOf(filters); }
 function randomYear() {
   const r = yearRange();
   return r ? r[0] + Math.floor(Math.random() * (r[1] - r[0] + 1)) : null;
 }
-function baseKey() { return filterParams(null).toString(); }
+/* The pool's identity. The year RANGE belongs in here even though the query
+   carries a single year: a refill picks one random year out of the range and
+   fills the pool with 25 records from it, so narrowing the range has to
+   invalidate that pool. Leaving the range out was why changing the years
+   appeared to do nothing until the pool happened to drain. */
+function baseKey() {
+  const r = yearRange();
+  return filterParams(null).toString() + '|' + (r ? r.join('-') : 'any');
+}
+function sameFilters(a, b) { return Object.keys(DEFAULT_FILTERS).every(k => String(a[k]).trim() === String(b[k]).trim()); }
 
 /* ---------- the table: total releases → releases matching the filters ----------
    Discogs' search API has no year-range parameter (only an exact year), so the
@@ -749,17 +792,26 @@ function baseKey() { return filterParams(null).toString(); }
    per_page=1 probes, not one per keystroke. */
 const countCache = JSON.parse(localStorage.getItem('digger_pagecount') || '{}');
 function saveCountCache() { try { localStorage.setItem('digger_pagecount', JSON.stringify(countCache)); } catch (e) {} }
-const tableCounts = Object.assign({ total: null, matching: null },
-  JSON.parse(localStorage.getItem('casino_counts') || '{}'));
-let countKey = '';
+/* Counts are cached per filter key, so previewing a draft and then applying it
+   costs one probe, not two — the applied count is already known. */
+const tableCounts = JSON.parse(localStorage.getItem('casino_counts') || '{}');
+function saveTableCounts() { try { localStorage.setItem('casino_counts', JSON.stringify(tableCounts)); } catch (e) {} }
+function countKeyFor(f) {
+  const r = rangeOf(f);
+  return paramsFor(f, r && r[0] === r[1] ? r[0] : null).toString();
+}
+function countOf(f) { const v = tableCounts[countKeyFor(f)]; return v === undefined ? null : v; }
 
 function fmt(n) { return n == null ? '—' : n.toLocaleString('en-US'); }
+function rangeLabel(f) {
+  const r = rangeOf(f);
+  return !r ? 'any year' : r[0] === r[1] ? String(r[0]) : r[0] + '–' + r[1];
+}
 function renderTopBar() {
-  const r = yearRange();
-  $('t-years').textContent = r ? (r[0] === r[1] ? String(r[0]) : r[0] + '–' + r[1]) : 'any year';
+  $('t-years').textContent = rangeLabel(filters);
   $('t-format').textContent = filters.format ? filters.format.toLowerCase() : 'any format';
-  $('t-counts').innerHTML = fmt(tableCounts.total) + ' → <em>' + fmt(tableCounts.matching) + '</em>';
-  $('foot-table').textContent = fmt(tableCounts.matching);
+  $('t-counts').innerHTML = fmt(tableCounts.__total) + ' → <em>' + fmt(countOf(filters)) + '</em>';
+  $('foot-table').textContent = fmt(countOf(filters));
 }
 async function probeCount(params, harvest) {
   const p = new URLSearchParams(params);
@@ -817,28 +869,36 @@ function bankSample(n) {
   }
   return a.slice(0, n);
 }
+/* Probes whichever filter set is being edited, so the drawer can show what a
+   draft would land on before you commit to it. Debounced: typing a country
+   does not cost a chip per keystroke. */
 let countTimer = null;
-function refreshCounts() {
+function refreshCounts(f) {
+  const target = f || draft;
   clearTimeout(countTimer);
   countTimer = setTimeout(async () => {
-    const r = yearRange();
-    const p = filterParams(r && r[0] === r[1] ? r[0] : null);
-    const key = p.toString();
-    if (key === countKey) return;
-    countKey = key;
+    const key = countKeyFor(target);
+    if (tableCounts[key] !== undefined && tableCounts.__total != null) return;
     try {
-      if (tableCounts.total == null) {
-        tableCounts.total = await probeCount(new URLSearchParams({ type: 'release' }));
+      if (tableCounts.__total == null) {
+        tableCounts.__total = await probeCount(new URLSearchParams({ type: 'release' }));
       }
-      tableCounts.matching = await probeCount(p, true);
-      localStorage.setItem('casino_counts', JSON.stringify(tableCounts));
+      // countKeyFor() already spelled the query — reuse it rather than rebuild it.
+      if (tableCounts[key] === undefined) tableCounts[key] = await probeCount(new URLSearchParams(key), true);
+      saveTableCounts();
     } catch (e) { /* a failed probe just leaves the last known number up */ }
-    renderTopBar();
+    renderTopBar(); renderDrawer();
   }, 600);
 }
 
-/* ---------- candidate pool ---------- */
-let pool = [], poolKey = '';
+/* ---------- candidate pool ----------
+   A refill buys 25 candidates from one random year and one random page, which
+   is cheap but correlated: left to drain, the pool serves 25 records from the
+   same year and the year range looks like it is being ignored. Capping reuse
+   rotates the year every few pulls for about one extra request per six — the
+   chip balance barely moves, the variety does. */
+const POOL_REUSE = 6;
+let pool = [], poolKey = '', poolUsed = 0;
 async function refillPool() {
   const year = randomYear();
   const params = filterParams(year);
@@ -862,6 +922,7 @@ async function refillPool() {
     d = await api(API + '/database/search?' + params + '&page=' + page);
   }
   pool = d.results || [];
+  poolUsed = 0;
   bankCovers(pool);
   poolKey = baseKey();
   return pool.length > 0;
@@ -939,12 +1000,13 @@ async function digOnce() {
       // Refill only when the current page's releases are used up or the filters
       // changed — no arbitrary every-N-rolls refresh (it burned extra requests and
       // could fire mid-roll). Each refill already picks a fresh random year + page.
-      if (pool.length === 0 || poolKey !== baseKey()) {
+      if (pool.length === 0 || poolKey !== baseKey() || poolUsed >= POOL_REUSE) {
         const ok = await refillPool();
         if (!ok && ++emptyRefills >= 3) return { ok: false, reason: 'empty' };
         if (!ok) continue;
       }
       const item = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+      poolUsed++;
       const rel = await api(item.resource_url);
       lastRel = rel; lastItem = item;
       const vids = (rel.videos || []).filter(v => v.embed && v.duration > 45 && v.duration < 900
@@ -1114,7 +1176,9 @@ function renderList() {
 
 /* ---------- head ---------- */
 function renderHead(t) {
-  $('h-line1').textContent = ['pull ' + pad(runNo(t)), t.year, t.country].filter(v => v && v !== '—').join(' · ');
+  const n = runNo(t);
+  $('h-line1').textContent = [n ? 'pull ' + pad(n) : '', t.year, t.country]
+    .filter(v => v && v !== '—').join(' · ');
   $('h-title').textContent = t.release;
   $('h-meta').textContent = [t.artist, t.label, t.catno].filter(v => v && v !== '—').join(' · ');
   if (t.mult == null) {
@@ -1128,16 +1192,36 @@ function renderHead(t) {
 function pad(n) { return String(n).padStart(2, '0'); }
 
 /* ---------- the run ----------
-   A run is `settings.runLength` pulls. It is the only piece of state the
-   redesign adds: everything else on the page is a view of it. */
+   A run is `settings.runLength` pulls, or endless when that is 0 — the default.
+   An endless run never reaches a "pick a winner" moment of its own, so instead
+   every row stays pickable and starting over is an explicit act (the drawer's
+   new-run button, or N).
+
+   Pull numbers come off a counter rather than the array index: an endless run
+   keeps only a window of recent rows in the table, and 42 has to stay 42. */
+const RUN_LENGTHS = [['0', 'endless'], ['1', '1'], ['2', '2'], ['3', '3'], ['4', '4'], ['5', '5'], ['6', '6']];
+const RUN_WINDOW = 5;            // rows visible before the table starts dropping the oldest
+const RUN_MAX = 200;             // a long stream shouldn't grow the log without bound
+
 let run = [];
-let picked = null;               // index of the row chat has picked, once the run is complete
-function runNo(t) {
-  const i = t ? run.indexOf(t) : -1;
-  return i >= 0 ? i + 1 : (run.length || 1);
+let pullNo = 0;                  // pulls so far in this run; survives windowing
+let picked = null;               // the pull chat has picked, by reference
+function isEndless() { return !settings.runLength; }
+function runLengthLabel(n) { return n ? String(n) : 'endless'; }
+function runNo(t) { return t && run.includes(t) ? t.n : null; }
+function runComplete() { return !isEndless() && run.length >= settings.runLength; }
+/* Rows are pickable the moment the run can no longer grow into a decision —
+   at full length for a fixed run, and at any time for an endless one. */
+function canPick() { return beat !== 'rolling' && (isEndless() ? run.length > 0 : runComplete()); }
+function newRun() {
+  run = []; pullNo = 0; picked = null;
+  // The player is left alone: cutting the audio to clear a table would be a
+  // bad trade on a live stream. The head simply stops claiming a pull number,
+  // because what is playing is no longer part of this run.
+  renderRun();
+  if (current) renderHead(current);
+  renderTransport();
 }
-function runComplete() { return run.length >= settings.runLength; }
-function newRun() { run = []; picked = null; current = null; renderRun(); }
 
 function thumbFor(t) {
   return t.cover || (t.videoId ? 'https://i.ytimg.com/vi/' + t.videoId + '/default.jpg' : '');
@@ -1148,14 +1232,14 @@ function cell(cls, node) {
   if (node != null) td.append(node);
   return td;
 }
-function runRow(t, i) {
+function runRow(t) {
   const tr = document.createElement('tr');
-  const complete = runComplete() && beat !== 'rolling';
+  const pickable = canPick();
   tr.className = [
     t === current ? 'cur' : '',
     isGrail(t) ? 'g' : '',
-    complete ? 'pickable' : '',
-    picked === i ? 'picked' : ''
+    pickable ? 'pickable' : '',
+    picked === t ? 'picked' : ''
   ].filter(Boolean).join(' ');
 
   const src = thumbFor(t);
@@ -1168,13 +1252,14 @@ function runRow(t, i) {
   sub.textContent = [t.artist, t.year, t.country].filter(v => v && v !== '—').join(' · ');
   const t_ = cell('t'); t_.append(title, sub);
 
-  tr.append(cell('n', document.createTextNode(pad(i + 1))), cell('th', thumb), t_,
+  tr.append(cell('n', document.createTextNode(pad(t.n))), cell('th', thumb), t_,
             cell('r', document.createTextNode(t.mult == null ? '—' : t.mult.toFixed(1) + '×')));
 
-  if (complete) {
-    tr.onclick = () => { picked = i; renderRun(); };
+  if (pickable) {
+    const choose = () => { picked = t; renderRun(); };
+    tr.onclick = choose;
     tr.tabIndex = 0;
-    tr.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); picked = i; renderRun(); } };
+    tr.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); } };
   }
   return tr;
 }
@@ -1190,20 +1275,27 @@ function blankRow(n, cls, label) {
 function renderRun() {
   const tb = $('run-body');
   tb.innerHTML = '';
-  run.forEach((t, i) => tb.appendChild(runRow(t, i)));
-  if (beat === 'rolling') tb.appendChild(blankRow(run.length + 1, 'cur next', 'pulling…'));
-  else if (!runComplete()) tb.appendChild(blankRow(run.length + 1, 'next', '—'));
+  // A fixed run is short enough to show whole; an endless one shows its tail,
+  // and the label row carries the count that the rows can no longer convey.
+  const shown = isEndless() ? run.slice(-RUN_WINDOW) : run;
+  shown.forEach(t => tb.appendChild(runRow(t)));
+  if (beat === 'rolling') tb.appendChild(blankRow(pullNo + 1, 'cur next', 'pulling…'));
+  else if (!runComplete()) tb.appendChild(blankRow(pullNo + 1, 'next', '—'));
+  $('runs-label').textContent = run.length > shown.length
+    ? 'this run · ' + pullNo + ' pulls'
+    : 'this run';
   renderPick();
 }
 function renderPick() {
   const n = settings.runLength;
-  $('idle-sub').textContent =
-    (n === 1 ? 'one pull' : n + ' pulls') + ', then chat picks one to flip';
-  const complete = runComplete() && beat !== 'rolling';
-  $('pick-left').textContent = complete
-    ? 'pick a winner'
-    : 'chat picks after ' + pad(settings.runLength);
-  $('btn-flip').classList.toggle('on', complete && picked !== null);
+  $('idle-sub').textContent = isEndless()
+    ? 'keep pulling — chat flips whichever it likes'
+    : (n === 1 ? 'one pull' : n + ' pulls') + ', then chat picks one to flip';
+  $('pick-left').textContent = isEndless()
+    ? (picked ? 'picked pull ' + pad(picked.n) : 'chat picks any time')
+    : (canPick() ? 'pick a winner' : 'chat picks after ' + pad(n));
+  $('btn-flip').classList.toggle('on', canPick() && picked !== null);
+  $('run-count').textContent = pullNo;
 }
 
 /* The transport's sub-label is the one place the next action is spelled out,
@@ -1215,7 +1307,7 @@ function renderTransport() {
   } else if (runComplete() && beat !== 'rolling') {
     $('roll-sub').textContent = 'new run \u00b7 space';
   } else {
-    $('roll-sub').textContent = 'pull ' + pad(run.length + 1) + ' \u00b7 space';
+    $('roll-sub').textContent = 'pull ' + pad(pullNo + 1) + ' \u00b7 space';
   }
   const playable = !!(current && current.videoId);
   $('btn-fav').disabled = !playable;
@@ -1263,7 +1355,7 @@ function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
 
 let cycTimer = null;
 function startCyclers() {
-  $('c-pull').textContent = pad(run.length + 1);
+  $('c-pull').textContent = pad(pullNo + 1);
   renderCycler();
   const tick = () => document.querySelectorAll('.cyc').forEach(el => { el.textContent = POOLS[el.dataset.k](); });
   tick();
@@ -1327,7 +1419,9 @@ async function roll() {
 function commitPull(res, back) {
   if (res.ok || res.reason === 'nopreview') {
     current = res.pull;
+    current.n = ++pullNo;
     run.push(current);
+    if (run.length > RUN_MAX) run.shift();
     recordPull(current);
     if (res.ok) {
       setState(isGrail(current) ? 'grail' : 'reveal');
@@ -1467,6 +1561,7 @@ function toast(msg) {
 $('btn-roll').onclick = roll;
 /* TODO: "flip" is out of scope for this pass — what it does to the picked
    record has not been specified yet. Wired here so the affordance is real. */
+$('btn-new-run').onclick = () => { newRun(); toast('New run — back to pull 01'); };
 $('btn-flip').onclick = () => {
   if (picked === null || !runComplete()) return;
   toast('Picked ' + run[picked].release + ' — flip is not wired up yet.');
@@ -1489,14 +1584,14 @@ $('f-grail').addEventListener('change', e => {
 });
 $('token').addEventListener('input', () => { $('v-token').textContent = maskToken($('token').value.trim()); });
 
-/* A filter change re-reads the table and re-labels the drawer. The count
-   probe is debounced inside refreshCounts, so typing doesn't cost chips. */
+/* An edit only previews: it probes the draft's count so the Apply bar can say
+   what committing would land on. The top bar is untouched until Apply. */
 function onFiltersChanged() {
-  renderTopBar();
-  refreshCounts();
+  renderApply();
+  refreshCounts(draft);
 }
-['f-style', 'f-country'].forEach(id =>
-  $(id).addEventListener('input', () => { renderDrawer(); onFiltersChanged(); }));
+$('f-style').addEventListener('input', e => { draft.style = e.target.value; renderDrawer(); onFiltersChanged(); });
+$('f-country').addEventListener('input', e => { draft.country = e.target.value; renderDrawer(); onFiltersChanged(); });
 
 /* ---------- custom dropdowns + style autocomplete ----------
    Styles are Discogs' real controlled vocabulary, grouped under the genre they
@@ -1521,7 +1616,7 @@ const GENRE_STYLES = {
 };
 const ANY_STYLES = [...new Set(Object.values(GENRE_STYLES).flat())].sort((a, b) => a.localeCompare(b));
 function styleOptionsForGenre() {
-  return GENRE_STYLES[filters.genre] || ANY_STYLES;
+  return GENRE_STYLES[draft.genre] || ANY_STYLES;
 }
 
 /* ---------- drawer ----------
@@ -1544,22 +1639,52 @@ function maskToken(v) {
 }
 function renderDrawer() {
   buildOptions($('opts-genre'), GENRES.map(g => [g, g || 'any']),
-    v => v === filters.genre, v => { setGenre(v); });
-  buildOptions($('opts-format'), FORMATS, v => v === filters.format, v => { filters.format = v; });
-  buildOptions($('opts-runlen'), [1, 2, 3, 4, 5, 6].map(n => [String(n), String(n)]),
+    v => v === draft.genre, v => { setGenre(v); });
+  buildOptions($('opts-format'), FORMATS, v => v === draft.format, v => { draft.format = v; });
+  buildOptions($('opts-runlen'), RUN_LENGTHS,
     v => +v === settings.runLength, v => { settings.runLength = +v; saveSettings(); renderRun(); renderTransport(); });
   buildOptions($('opts-grail'), ['1.2', '1.5', '2', '3', '5'].map(n => [n, n + '\u00d7']),
     v => parseFloat(v) === settings.grailThreshold, v => { settings.grailThreshold = parseFloat(v); saveSettings(); $('f-grail').value = v; reflowGrail(); });
 
-  $('v-genre').textContent = filters.genre || 'any';
-  $('v-style').textContent = $('f-style').value.trim() || 'any';
-  $('v-country').textContent = $('f-country').value.trim() || 'any';
-  $('v-format').textContent = (FORMATS.find(f => f[0] === filters.format) || ['', 'any format'])[1];
-  $('v-runlen').textContent = settings.runLength;
+  $('v-genre').textContent = draft.genre || 'any';
+  $('v-style').textContent = draft.style.trim() || 'any';
+  $('v-country').textContent = draft.country.trim() || 'any';
+  $('v-format').textContent = (FORMATS.find(f => f[0] === draft.format) || ['', 'any format'])[1];
+  $('v-runlen').textContent = runLengthLabel(settings.runLength);
   $('v-grail').textContent = settings.grailThreshold + '\u00d7';
   $('v-token').textContent = maskToken($('token').value.trim());
+  $('run-count').textContent = pullNo;
   renderYears();
+  renderApply();
 }
+
+/* The Apply bar is the only place the draft becomes real. It also says what
+   applying would land on, so the choice is made before the request, not after. */
+function renderApply() {
+  const pending = !sameFilters(draft, filters);
+  const n = countOf(draft);
+  const countMoved = countKeyFor(draft) !== countKeyFor(filters);
+  $('btn-apply').disabled = !pending;
+  $('apply-note').classList.toggle('pending', pending);
+  $('apply-note').textContent = !pending
+    ? 'these are the filters the roll uses'
+    : (countMoved && n != null)
+      ? 'apply to roll on ' + fmt(n) + ' releases'
+      : 'unapplied changes — apply to use them';
+  $('btn-settings').classList.toggle('pending', pending);
+}
+function applyFilters() {
+  if (sameFilters(draft, filters)) return;
+  filters = Object.assign({}, draft);
+  // The candidate pool was dealt from the old filters — drop it so the very
+  // next roll re-queries rather than draining stale records.
+  pool = []; poolKey = ''; poolUsed = 0;
+  renderTopBar();
+  renderDrawer();
+  refreshCounts(filters);
+  toast('Table updated — ' + rangeLabel(filters) + ' · ' + (filters.genre || 'any genre'));
+}
+$('btn-apply').onclick = applyFilters;
 /* Changing the threshold re-decides every pull already on the table. */
 function reflowGrail() {
   if (current && (beat === 'reveal' || beat === 'grail')) setState(isGrail(current) ? 'grail' : 'reveal');
@@ -1567,13 +1692,13 @@ function reflowGrail() {
   renderRun(); renderList(); renderDrawer();
 }
 function setGenre(v) {
-  filters.genre = v;
+  draft.genre = v;
   // Styles are genre-specific — drop a leftover style that doesn't belong to
   // the newly picked genre, and hint the field with a relevant example.
   const style = $('f-style');
   const valid = styleOptionsForGenre().some(x => x.toLowerCase() === style.value.trim().toLowerCase());
-  if (style.value && !valid) style.value = '';
-  style.placeholder = filters.genre ? 'e.g. ' + styleOptionsForGenre()[0] : 'Any';
+  if (style.value && !valid) { style.value = ''; draft.style = ''; }
+  style.placeholder = draft.genre ? 'e.g. ' + styleOptionsForGenre()[0] : 'Any';
   $('cac-style-menu').classList.remove('open');
 }
 
@@ -1601,11 +1726,12 @@ $('dtab-log').onclick = () => showSection('log');
 
 /* ---------- year range: two handles on one track ---------- */
 const YR_MIN = 1900, YR_MAX = new Date().getFullYear() + 1;
-function yrVals() { return [parseInt($('f-year-from').value), parseInt($('f-year-to').value)]; }
+function yrVals() { return [draft.yearFrom, draft.yearTo]; }
 function yrPct(v) { return (v - YR_MIN) / (YR_MAX - YR_MIN) * 100; }
 function renderYears() {
   const [a, b] = yrVals();
   $('v-years').textContent = a === b ? String(a) : a + ' \u2013 ' + b;
+  $('v-years').style.color = (a === filters.yearFrom && b === filters.yearTo) ? '' : 'var(--acid)';
   $('yr-a').style.left = yrPct(a) + '%';
   $('yr-b').style.left = yrPct(b) + '%';
   $('yr-fill').style.left = yrPct(a) + '%';
@@ -1619,8 +1745,8 @@ function renderYears() {
 function setYear(which, v) {
   v = Math.max(YR_MIN, Math.min(YR_MAX, Math.round(v)));
   const [a, b] = yrVals();
-  if (which === 'a') $('f-year-from').value = Math.min(v, b);
-  else $('f-year-to').value = Math.max(v, a);
+  if (which === 'a') draft.yearFrom = Math.min(v, b);
+  else draft.yearTo = Math.max(v, a);
   renderYears();
   onFiltersChanged();
 }
@@ -1665,7 +1791,7 @@ function setYear(which, v) {
     opts.forEach((o, idx) => o.classList.toggle('hi', idx === i));
     if (opts[i]) opts[i].scrollIntoView({ block: 'nearest' });
   }
-  function pick(val) { input.value = val; menu.classList.remove('open'); renderDrawer(); onFiltersChanged(); }
+  function pick(val) { input.value = val; draft.style = val; menu.classList.remove('open'); renderDrawer(); onFiltersChanged(); }
   function open() {
     const q = input.value.trim().toLowerCase();
     const pool = styleOptionsForGenre();
@@ -1713,12 +1839,13 @@ document.addEventListener('click', e => {
 /* ---------- keyboard ----------
    One table, so the drawer's list and the handler can't drift apart. */
 const SHORTCUTS = [
-  ['space', 'roll — or start a new run', () => roll()],
+  ['space', 'roll the next pull', () => roll()],
   ['k', 'play / pause', togglePlay],
   ['f', 'favorite this pull', toggleFav],
   ['y', 'download the mp3', () => downloadAudio()],
   ['c', 'copy the youtube link', copyLink],
   ['r', 'tap tempo', tap],
+  ['n', 'start a new run', () => { newRun(); toast('New run — back to pull 01'); }],
   ['s', 'open / close settings', () => setDrawer(!document.body.classList.contains('settings'))],
   ['esc', 'close settings', () => setDrawer(false)]
 ];
@@ -1747,6 +1874,8 @@ document.addEventListener('keydown', e => {
 });
 
 /* ---------- boot ---------- */
+$('f-style').value = draft.style;
+$('f-country').value = draft.country;
 updateFuel();
 coverBank.slice(-12).forEach(u => { new Image().src = u; });   // warm last session's covers
 renderDrawer();
