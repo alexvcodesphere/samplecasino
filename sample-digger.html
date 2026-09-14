@@ -326,7 +326,8 @@ body.settings .drawer { transform: translateX(0); }
   .top .one { margin-left: 0; }
   .top .filt { flex-wrap: wrap; gap: 14px; }
   .mark { font-size: 30px; }
-  .yt { width: auto; height: auto; aspect-ratio: 16/9; }
+  /* stays positioned: the state panes are absolute against it */
+  .yt { position: relative; width: auto; height: auto; aspect-ratio: 16/9; }
   .tr { gap: 10px; }
   .roll { height: 54px; font-size: 17px; }
   .roll small { font-size: 11px; }
@@ -654,7 +655,17 @@ async function api(url, opts) {
   reqLog.push(Date.now());
   if (!(opts && opts.meta)) reqTotal++;
   updateFuel();
-  const res = await fetch(url, { headers: apiHeaders() });
+  let res;
+  try {
+    res = await fetch(url, { headers: apiHeaders() });
+  } catch (e) {
+    // Over quota, Discogs answers without an Access-Control-Allow-Origin header,
+    // so the browser reports a CORS/network failure rather than the 429 itself.
+    // Treat an unreachable Discogs as a spent balance: it is the common cause,
+    // and it costs nothing if we are wrong — the chips come back in a minute.
+    rlBlockedUntil = Date.now() + 30000; updateFuel();
+    throw new Error('rate');
+  }
   if (res.status === 429) { rlBlockedUntil = Date.now() + 30000; updateFuel(); throw new Error('rate'); }
   if (!res.ok) throw new Error('http ' + res.status);
   return res.json();
@@ -1034,6 +1045,16 @@ function updateMediaSession(t) {
   navigator.mediaSession.setActionHandler('play', () => { if (playerReady) player.playVideo(); silentAudio.play().catch(() => {}); });
   navigator.mediaSession.setActionHandler('pause', () => { if (playerReady) player.pauseVideo(); silentAudio.pause(); });
   navigator.mediaSession.setActionHandler('nexttrack', () => roll());
+  navigator.mediaSession.setActionHandler('previoustrack', playPrev);
+}
+
+/* The lock screen's back button replays the previous pull without disturbing
+   the run — it is a listening control, not a roll. */
+function playPrev() {
+  if (history.length < 2) return;
+  const t = history[1];
+  current = t;
+  play(t); renderHead(t); renderRun(); renderList(); updateFavBtn();
 }
 
 /* ---------- history & favorites ---------- */
@@ -1175,6 +1196,9 @@ function renderRun() {
   renderPick();
 }
 function renderPick() {
+  const n = settings.runLength;
+  $('idle-sub').textContent =
+    (n === 1 ? 'one pull' : n + ' pulls') + ', then chat picks one to flip';
   const complete = runComplete() && beat !== 'rolling';
   $('pick-left').textContent = complete
     ? 'pick a winner'
@@ -1326,7 +1350,9 @@ function commitPull(res, back) {
     toast('No results for these filters — try loosening them.');
   } else if (res.reason === 'rate') {
     setState(back);
-    toast('Out of chips — the table refills within a minute.');
+    toast($('token').value.trim()
+      ? 'Out of chips — the table refills within a minute.'
+      : 'Out of chips — the table refills within a minute. A free Discogs token in settings raises the limit.');
   } else if (res.reason === 'busy') {
     setState(back);
   } else {
