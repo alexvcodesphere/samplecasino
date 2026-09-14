@@ -584,7 +584,7 @@ body.settings .drawer { transform: translateX(0); }
       <button class="row-head"><span>discogs token</span><span class="val" id="v-token">not set</span></button>
       <div class="row-body">
         <input id="token" type="password" placeholder="paste token…" autocomplete="off">
-        <span class="mini">A free token raises the limit from 25 to 60 Discogs requests a minute — roughly 6 chips to 14 — and unlocks Discogs cover art, which unauthenticated search does not return. discogs.com → Settings → Developers.</span>
+        <span class="mini" id="token-note"></span>
       </div>
     </div>
 
@@ -665,10 +665,34 @@ $('token').addEventListener('change', e => {
 });
 $('f-grail').value = settings.grailThreshold;
 
-/* ---------- discogs api ---------- */
+/* ---------- discogs api ----------
+   Three ways to reach Discogs, in order of preference:
+
+     1. The viewer's own token, sent straight from their browser. Discogs meters
+        per token, so this is a private 60/min bucket — the reason pasting one
+        buys you more rolls even when the server already has one.
+     2. The server's DISCOGS_TOKEN, via /discogs. The server attaches the
+        credential, so it never reaches the page and can't be read by whoever
+        loads it. One bucket, shared by everyone watching.
+     3. Neither: direct and unauthenticated, 25/min and no cover art.
+
+   A personal token is never proxied — it is the viewer's own credential in
+   their own browser, and routing it through the server would only put it
+   somewhere it doesn't belong. */
+let serverToken = false;
+function localToken() { return $('token').value.trim(); }
+function haveToken() { return serverToken || !!localToken(); }
+function usingProxy() { return serverToken && !localToken(); }
 function apiHeaders() {
-  const t = $('token').value.trim();
+  const t = localToken();
   return t ? { 'Authorization': 'Discogs token=' + t } : {};
+}
+function apiUrl(url) {
+  if (!usingProxy()) return url;
+  const u = new URL(url);
+  const p = new URLSearchParams(u.search);
+  p.set('path', u.pathname);
+  return '/discogs?' + p;
 }
 /* meta:true — counts against the rate limit but not against the observed
    per-pull request cost, so the table-count probes don't distort the chip math. */
@@ -678,7 +702,8 @@ async function api(url, opts) {
   updateFuel();
   let res;
   try {
-    res = await fetch(url, { headers: apiHeaders() });
+    res = await fetch(apiUrl(url), { headers: apiHeaders() });
+    readServerRate(res);
   } catch (e) {
     // Over quota, Discogs answers without an Access-Control-Allow-Origin header,
     // so the browser reports a CORS/network failure rather than the 429 itself.
@@ -692,6 +717,22 @@ async function api(url, opts) {
   return res.json();
 }
 
+/* What Discogs says is left of the server's bucket. Only readable through the
+   proxy — on a direct call the header isn't CORS-exposed. Worth having because
+   the server's token is shared: this browser's own request log cannot see what
+   other viewers have spent. */
+let serverRate = null;
+function readServerRate(res) {
+  if (!usingProxy()) return;
+  const rem = res.headers.get('X-Discogs-Ratelimit-Remaining');
+  if (rem === null) return;
+  serverRate = {
+    limit: parseInt(res.headers.get('X-Discogs-Ratelimit')) || 60,
+    remaining: parseInt(rem),
+    at: Date.now()
+  };
+}
+
 /* ---------- chip balance ----------
    Discogs allows 25 req/min without a token, 60 with (rolling window).
    We track our own requests; one pull costs several (search + release lookups).
@@ -701,8 +742,16 @@ const MAX_PIPS = 12;             // beyond this the row stops being countable at
 function fuelInfo() {
   const now = Date.now();
   reqLog = reqLog.filter(t => now - t < 60000);
-  const limit = $('token').value.trim() ? 60 : 25;
-  const rem = now < rlBlockedUntil ? 0 : Math.max(0, limit - reqLog.length);
+  let limit = haveToken() ? 60 : 25;
+  let rem = now < rlBlockedUntil ? 0 : Math.max(0, limit - reqLog.length);
+  // Discogs' own count beats ours when we have it, but only downwards: it is a
+  // snapshot, so age it by the requests we've made since and never let it talk
+  // the balance up past what we can account for.
+  if (serverRate && now - serverRate.at < 60000) {
+    const sinceSnapshot = reqLog.filter(t => t > serverRate.at).length;
+    limit = serverRate.limit || limit;
+    rem = now < rlBlockedUntil ? 0 : Math.max(0, Math.min(rem, serverRate.remaining - sinceSnapshot));
+  }
   const perDig = digTotal ? Math.max(1, reqTotal / digTotal) : 4;
   return { limit, rem, perDig, rolls: Math.floor(rem / perDig), max: Math.floor(limit / perDig) };
 }
@@ -1432,7 +1481,7 @@ function commitPull(res, back) {
     toast('No results for these filters — try loosening them.');
   } else if (res.reason === 'rate') {
     setState(back);
-    toast($('token').value.trim()
+    toast(haveToken()
       ? 'Out of chips — the table refills within a minute.'
       : 'Out of chips — the table refills within a minute. A free Discogs token in settings raises the limit.');
   } else if (res.reason === 'busy') {
@@ -1554,7 +1603,7 @@ $('f-grail').addEventListener('change', e => {
   saveSettings();
   reflowGrail();
 });
-$('token').addEventListener('input', () => { $('v-token').textContent = maskToken($('token').value.trim()); });
+$('token').addEventListener('input', () => { renderDrawer(); updateFuel(); });
 
 /* An edit only previews: it probes the draft's count so the Apply bar can say
    what committing would land on. The top bar is untouched until Apply. */
@@ -1624,7 +1673,11 @@ function renderDrawer() {
   $('v-format').textContent = (FORMATS.find(f => f[0] === draft.format) || ['', 'any format'])[1];
   $('v-runlen').textContent = runLengthLabel(settings.runLength);
   $('v-grail').textContent = settings.grailThreshold + '\u00d7';
-  $('v-token').textContent = maskToken($('token').value.trim());
+  $('v-token').textContent = localToken() ? maskToken(localToken())
+    : serverToken ? 'server default' : 'not set';
+  $('token-note').textContent = serverToken
+    ? 'This deployment signs Discogs requests with its own token, which stays on the server and never reaches this page — but everyone watching shares its 60 requests a minute. Paste your own to get a private 60 instead. discogs.com → Settings → Developers.'
+    : 'A free token raises the limit from 25 to 60 Discogs requests a minute — roughly 6 chips to 14 — and unlocks Discogs cover art, which unauthenticated search does not return. discogs.com → Settings → Developers.';
   $('v-thisrun').textContent = pullNo + (pullNo === 1 ? ' pull' : ' pulls');
   $('v-history').textContent = history.length;
   $('v-favs').textContent = favs.length;
@@ -1878,11 +1931,20 @@ document.addEventListener('keydown', e => {
 /* ---------- boot ---------- */
 $('f-style').value = draft.style;
 $('f-country').value = draft.country;
-updateFuel();
 coverBank.slice(-12).forEach(u => { new Image().src = u; });   // warm last session's covers
 renderDrawer();
 renderTopBar();
-refreshCounts();
+/* Ask the server whether it holds a token before spending the first request:
+   it decides both the rate limit and whether calls go direct or via the proxy. */
+fetch('/config')
+  .then(r => (r.ok ? r.json() : {}))
+  .catch(() => ({}))
+  .then(cfg => {
+    serverToken = !!cfg.serverToken;
+    updateFuel();
+    renderDrawer();
+    refreshCounts();
+  });
 renderList();
 renderSession();
 renderKeys();

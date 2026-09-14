@@ -41,6 +41,11 @@ run:
     env:
       PORT: 3000
       HOST: 0.0.0.0
+      # Optional: set DISCOGS_TOKEN as a Codesphere secret (not here — this file
+      # is committed). With it the server signs Discogs calls itself, which
+      # raises the rate limit from 25 to 60 requests a minute and is the only
+      # way search returns cover art. The token stays server-side: the page
+      # calls /discogs and never sees it.
     steps:
       - name: Start Sample Casino
         command: python3 server.py

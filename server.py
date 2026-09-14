@@ -24,7 +24,9 @@ import subprocess
 import sys
 import tempfile
 import os
+import urllib.error
 import urllib.parse
+import urllib.request
 
 PORT = int(os.environ.get('PORT', '8765'))
 # Locally bind loopback (the /download endpoint runs a subprocess, so don't expose
@@ -32,6 +34,23 @@ PORT = int(os.environ.get('PORT', '8765'))
 HOST = os.environ.get('HOST', '127.0.0.1')
 APP_FILE = 'sample-digger.html'   # served on the main route "/"
 YOUTUBE_RE = re.compile(r'^https://(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[\w-]{11}([&?].*)?$')
+
+# A Discogs token raises the rate limit from 25 to 60 requests a minute and is
+# the only way to get cover art out of search. Set DISCOGS_TOKEN and the app
+# stops asking each viewer for one.
+#
+# The token is deliberately NOT handed to the page. The browser talks to Discogs
+# directly, so a token embedded in the HTML would be readable by anyone who
+# loads it — and a Discogs personal token reaches that account's collection,
+# wantlist and marketplace. Instead the browser calls /discogs and the server
+# attaches the credential, so it never leaves this process.
+DISCOGS_API = 'https://api.discogs.com'
+DISCOGS_TOKEN = os.environ.get('DISCOGS_TOKEN', '').strip()
+# Only the two endpoints the app actually uses, so this can't be turned into an
+# open proxy for the rest of the Discogs API.
+DISCOGS_PATH_RE = re.compile(r'^/(database/search|releases/\d+)$')
+# Discogs rejects requests without a descriptive User-Agent.
+DISCOGS_UA = 'SampleCasino/1.0 (+https://github.com/alexvcodesphere/samplecasino)'
 
 # ffmpeg and deno come from Nix on Codesphere (see ci.yml), which lands them in
 # ~/.nix-profile/bin. The subprocess PATH is augmented with that dir so yt-dlp
@@ -92,12 +111,62 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == '/health':
             self.send_json(200, {'status': 'ok'})
+        elif parsed.path == '/config':
+            # Whether a token exists, never the token itself.
+            self.send_json(200, {'serverToken': bool(DISCOGS_TOKEN)})
+        elif parsed.path == '/discogs':
+            self.handle_discogs(parsed)
         elif parsed.path == '/download':
             self.handle_download(parsed)
         else:
             if parsed.path == '/':
                 self.path = '/' + APP_FILE   # serve the app on the main route
             super().do_GET()
+
+    def handle_discogs(self, parsed):
+        if not DISCOGS_TOKEN:
+            self.send_json(404, {'error': 'No server-side Discogs token configured.'})
+            return
+
+        qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        # The Discogs path travels in its own parameter; everything else is
+        # forwarded as the query. Discogs has no parameter called "path".
+        path = (qs.pop('path', None) or [''])[0]
+        if not DISCOGS_PATH_RE.match(path):
+            self.send_json(400, {'error': 'Unsupported Discogs path.'})
+            return
+
+        query = urllib.parse.urlencode([(k, v) for k, vs in qs.items() for v in vs])
+        req = urllib.request.Request(
+            DISCOGS_API + path + ('?' + query if query else ''),
+            headers={
+                'Authorization': 'Discogs token=' + DISCOGS_TOKEN,
+                'User-Agent': DISCOGS_UA,
+                'Accept': 'application/json',
+            })
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                body, status, headers = r.read(), r.status, r.headers
+        except urllib.error.HTTPError as e:
+            # Pass the status through — the app reads 429 as a spent balance.
+            body, status, headers = (e.read() or b'{}'), e.code, e.headers
+        except Exception:
+            self.send_json(502, {'error': 'Could not reach Discogs.'})
+            return
+
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        # Discogs reports what is left of the bucket, but only lists Location in
+        # its access-control-expose-headers, so a browser calling Discogs
+        # directly cannot read these. Through this proxy it can — and with a shared
+        # server token that count is the only way one viewer learns that another
+        # has been spending it.
+        for h in ('X-Discogs-Ratelimit', 'X-Discogs-Ratelimit-Remaining', 'X-Discogs-Ratelimit-Used'):
+            if headers.get(h) is not None:
+                self.send_header(h, headers.get(h))
+        self.end_headers()
+        self.wfile.write(body)
 
     def handle_download(self, parsed):
         qs = urllib.parse.parse_qs(parsed.query)
