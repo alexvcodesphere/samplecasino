@@ -241,12 +241,6 @@ body[data-state="rolling"] .head .ttl { color: var(--fg3); }
 body[data-state="rolling"] .runs tr.cur td.t,
 body[data-state="rolling"] .runs tr.cur td.n,
 body[data-state="rolling"] .runs tr.cur td.r { color: var(--fg3); }
-.runs tr.pickable { cursor: pointer; }
-.runs tr.pickable:hover td { background: rgba(236,233,226,.05); }
-.runs tr.picked td.t::before { content: "▶ "; color: var(--acid); }
-.runs .pick { margin-top: 1.4vh; color: var(--fg3); display: flex; justify-content: space-between; gap: 2vh; }
-.runs .pick .flip { color: var(--fg3); background: none; border: none; padding: 0; font: inherit; pointer-events: none; }
-.runs .pick .flip.on { color: var(--acid); pointer-events: auto; }
 
 /* ============================================================
    reserved zone — the webcam sits here in OBS. Keep it empty.
@@ -503,7 +497,7 @@ body.settings .drawer { transform: translateX(0); }
 <div class="head">
   <div class="s-idle">
     <h2 class="ttl"><span class="art">pull 01</span>Roll to start<br>the run.</h2>
-    <div class="m" id="idle-sub">three pulls, then chat picks one to flip</div>
+    <div class="m" id="idle-sub">an endless run — pull as long as you like</div>
   </div>
   <div class="s-roll">
     <h2 class="ttl"><span class="art">pull <span id="c-pull">01</span> · <span class="cyc" data-k="year">1968</span> · <span class="cyc" data-k="country">Sweden</span></span>pulling…</h2>
@@ -523,10 +517,6 @@ body.settings .drawer { transform: translateX(0); }
 <div class="runs">
   <div class="lab"><span id="runs-label">this run</span><span>want / have</span></div>
   <table><tbody id="run-body"></tbody></table>
-  <div class="pick">
-    <span id="pick-left">chat picks after 03</span>
-    <button class="flip" id="btn-flip">flip the winner →</button>
-  </div>
 </div>
 
 <!-- the webcam overlay lives here in OBS — nothing may be positioned in it -->
@@ -1214,9 +1204,8 @@ function pad(n) { return String(n).padStart(2, '0'); }
 
 /* ---------- the run ----------
    A run is `settings.runLength` pulls, or endless when that is 0 — the default.
-   An endless run never reaches a "pick a winner" moment of its own, so instead
-   every row stays pickable and starting over is an explicit act (the drawer's
-   new-run button, or N).
+   An endless run never ends on its own, so starting over is an explicit act:
+   the drawer's new-run button, or N.
 
    Pull numbers come off a counter rather than the array index: an endless run
    keeps only a window of recent rows in the table, and 42 has to stay 42. */
@@ -1226,16 +1215,12 @@ const RUN_MAX = 200;             // a long stream shouldn't grow the log without
 
 let run = [];
 let pullNo = 0;                  // pulls so far in this run; survives windowing
-let picked = null;               // the pull chat has picked, by reference
 function isEndless() { return !settings.runLength; }
 function runLengthLabel(n) { return n ? String(n) : 'endless'; }
 function runNo(t) { return t && run.includes(t) ? t.n : null; }
 function runComplete() { return !isEndless() && run.length >= settings.runLength; }
-/* Rows are pickable the moment the run can no longer grow into a decision —
-   at full length for a fixed run, and at any time for an endless one. */
-function canPick() { return beat !== 'rolling' && (isEndless() ? run.length > 0 : runComplete()); }
 function newRun() {
-  run = []; pullNo = 0; picked = null;
+  run = []; pullNo = 0;
   // The player is left alone: cutting the audio to clear a table would be a
   // bad trade on a live stream. The head simply stops claiming a pull number,
   // because what is playing is no longer part of this run.
@@ -1255,13 +1240,7 @@ function cell(cls, node) {
 }
 function runRow(t) {
   const tr = document.createElement('tr');
-  const pickable = canPick();
-  tr.className = [
-    t === current ? 'cur' : '',
-    isGrail(t) ? 'g' : '',
-    pickable ? 'pickable' : '',
-    picked === t ? 'picked' : ''
-  ].filter(Boolean).join(' ');
+  tr.className = [t === current ? 'cur' : '', isGrail(t) ? 'g' : ''].filter(Boolean).join(' ');
 
   const src = thumbFor(t);
   const thumb = document.createElement(src ? 'img' : 'div');
@@ -1276,12 +1255,6 @@ function runRow(t) {
   tr.append(cell('n', document.createTextNode(pad(t.n))), cell('th', thumb), t_,
             cell('r', document.createTextNode(t.mult == null ? '—' : t.mult.toFixed(1) + '×')));
 
-  if (pickable) {
-    const choose = () => { picked = t; renderRun(); };
-    tr.onclick = choose;
-    tr.tabIndex = 0;
-    tr.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); } };
-  }
   return tr;
 }
 /* The pull being rolled already has a row — dim, in place — so the table
@@ -1305,17 +1278,10 @@ function renderRun() {
   $('runs-label').textContent = run.length > shown.length
     ? 'this run · ' + pullNo + ' pulls'
     : 'this run';
-  renderPick();
-}
-function renderPick() {
   const n = settings.runLength;
   $('idle-sub').textContent = isEndless()
-    ? 'keep pulling — chat flips whichever it likes'
-    : (n === 1 ? 'one pull' : n + ' pulls') + ', then chat picks one to flip';
-  $('pick-left').textContent = isEndless()
-    ? (picked ? 'picked pull ' + pad(picked.n) : 'chat picks any time')
-    : (canPick() ? 'pick a winner' : 'chat picks after ' + pad(n));
-  $('btn-flip').classList.toggle('on', canPick() && picked !== null);
+    ? 'an endless run — pull as long as you like'
+    : (n === 1 ? 'one pull' : n + ' pulls') + ', then the run starts over';
   $('v-thisrun').textContent = pullNo + (pullNo === 1 ? ' pull' : ' pulls');
 }
 
@@ -1579,13 +1545,7 @@ function toast(msg) {
 
 /* ---------- wiring ---------- */
 $('btn-roll').onclick = roll;
-/* TODO: "flip" is out of scope for this pass — what it does to the picked
-   record has not been specified yet. Wired here so the affordance is real. */
 $('btn-new-run').onclick = () => { newRun(); toast('New run — back to pull 01'); };
-$('btn-flip').onclick = () => {
-  if (picked === null || !runComplete()) return;
-  toast('Picked ' + run[picked].release + ' — flip is not wired up yet.');
-};
 $('btn-fav').onclick = toggleFav;
 $('btn-download').onclick = downloadAudio;
 $('f-grail').addEventListener('change', e => {
