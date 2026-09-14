@@ -3,711 +3,546 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sample Casino — random sample finder</title>
+<title>Sample Casino — run log</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #06060a;
-    --glass: rgba(19, 19, 25, .55);
-    --glass-border: rgba(255, 255, 255, .08);
-    --text: #f4f4f6;
-    --muted: #8e8b9c;         /* violet-biased grey, sits inside the palette */
-    --accent: #f018c8;
-    --accent-2: #8a2be2;
-    --accent-soft: rgba(240, 24, 200, .16);
-    --gold: #f5c451;          /* chips and grails only — its scarcity is the point */
-    --mint: #34e0a1;          /* live state and the uncommon tier */
-    --dyn1: #f018c8;          /* dynamic, extracted from cover art */
-    --dyn2: #7b2ff7;
-    --radius: 20px;
-    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font: 15px/1.5 "Space Grotesk", -apple-system, "Segoe UI", sans-serif;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
+/* ============================================================
+   design system
+   One accent for interaction (--acid), one for grail (--gold).
+   Nothing else may use --gold; its scarcity is the signal.
+   ============================================================ */
+:root {
+  --bg:   #0b0b0d;
+  --fg:   #ece9e2;
+  --fg2:  rgba(236,233,226,.6);
+  --fg3:  rgba(236,233,226,.32);
+  --line: rgba(236,233,226,.12);
+  --acid: #c9f24a;
+  --gold: #f5b73d;
 
-  /* ---------- ambient background ---------- */
-  #bg { position: fixed; inset: 0; z-index: -2; overflow: hidden; background: var(--bg); }
-  .blob {
-    position: absolute; width: 55vmax; height: 55vmax; border-radius: 50%;
-    filter: blur(110px); opacity: .32; mix-blend-mode: screen;
-    transition: background-color 1.6s ease;
-  }
-  .b1 { background-color: var(--dyn1); top: -22%; left: -12%; animation: drift1 26s ease-in-out infinite alternate; }
-  .b2 { background-color: var(--dyn2); bottom: -28%; right: -14%; animation: drift2 34s ease-in-out infinite alternate; }
-  .b3 { background-color: #1b4bff; opacity: .14; top: 30%; left: 40%; width: 40vmax; height: 40vmax; animation: drift3 44s ease-in-out infinite alternate; }
-  @keyframes drift1 { to { transform: translate(12vw, 10vh) scale(1.15); } }
-  @keyframes drift2 { to { transform: translate(-10vw, -12vh) scale(.9); } }
-  @keyframes drift3 { to { transform: translate(-14vw, 8vh) rotate(40deg); } }
-  #grain {
-    position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .07;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
-  }
+  --mono:  'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans:  'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
 
-  /* ---------- header ---------- */
-  /* Same max-width and side padding as .layout, so the nav box lines up with
-     the cards below it rather than floating over the full page width. */
-  header { max-width: 1540px; margin: 0 auto; padding: 18px 28px 22px; }   /* 22px = the .layout gap */
-  .nav {
-    display: flex; align-items: center; justify-content: space-between; gap: 16px;
-    padding: 12px 18px; border-radius: var(--radius);
-    background: var(--glass); border: 1px solid var(--glass-border);
-    backdrop-filter: blur(22px) saturate(1.3);
-    -webkit-backdrop-filter: blur(22px) saturate(1.3);
-  }
-  .logo {
-    font-family: "Unbounded", sans-serif; font-size: 20px; font-weight: 900; letter-spacing: -.5px;
-    background: linear-gradient(100deg, #fff 20%, var(--dyn1) 60%, var(--dyn2));
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .header-right { display: flex; gap: 10px; align-items: center; }
-  .token-box { display: flex; gap: 8px; align-items: center; }
-  .token-box input {
-    background: var(--glass); border: 1px solid var(--glass-border); color: var(--text);
-    border-radius: 12px; padding: 8px 12px; width: 190px; font-size: 13px; font-family: inherit;
-  }
-  .hint { color: var(--muted); font-size: 12px; }
+  /* The player is 46vw wide at 16:9. On a window shorter than 16:9 that would
+     push the transport off the bottom, so cap it by the height left over after
+     the top offset (13vh), the transport gap (2.4vh), the transport (6.4vh)
+     and a bottom margin — 74vh of usable height = 131.6vh of 16:9 width. */
+  --player-w: min(46vw, 131.6vh);
+  --player-h: calc(var(--player-w) * 9 / 16);
+  --transport-top: calc(13vh + var(--player-h) + 2.4vh);
+}
 
-  /* ---------- layout ---------- */
-  .layout {
-    display: grid;
-    grid-template-columns: 300px minmax(420px, 1fr) 320px;
-    gap: 22px;
-    padding: 0 28px 48px;
-    max-width: 1540px;
-    margin: 0 auto;
-  }
-  @media (max-width: 1100px) {
-    .layout { grid-template-columns: 1fr; }
-    .layout > .main { order: -1; }   /* video first in single-column mode */
-  }
-  .layout > * { min-width: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+html { background: var(--bg); }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  width: 100vw; height: 100vh;
+  overflow: hidden;
+  position: relative;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; color: inherit; cursor: pointer; }
+a { color: inherit; }
 
-  .card {
-    background: var(--glass);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius);
-    padding: 22px;
-    backdrop-filter: blur(22px) saturate(1.3);
-    -webkit-backdrop-filter: blur(22px) saturate(1.3);
-  }
+/* Which head/player pane is live, by beat. The show rules carry the pane's own
+   display value rather than a blanket `block`, so a centred pane stays a grid. */
+.s-idle, .s-roll, .s-reveal, .s-nopreview { display: none; }
+body[data-state="idle"]      .s-idle      { display: block; }
+body[data-state="rolling"]   .s-roll      { display: block; }
+body[data-state="reveal"]    .s-reveal,
+body[data-state="grail"]     .s-reveal    { display: block; }
+body[data-state="nopreview"] .s-nopreview { display: block; }
+body[data-state="idle"]      .pane-empty,
+body[data-state="nopreview"] .pane-nopreview { display: grid; }
+body:not([data-state="grail"]) .on-grail  { display: none !important; }
+body[data-state="grail"]       .off-grail { display: none !important; }
 
-  /* ---------- now playing (left) ---------- */
-  .eyebrow {
-    display: flex; align-items: center; gap: 10px;
-    font-size: 11px; font-weight: 700; letter-spacing: .22em; color: var(--muted);
-    margin-bottom: 12px; text-transform: uppercase;
-  }
-  .eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
-  .eq i {
-    width: 3px; height: 4px; background: var(--dyn1); border-radius: 2px;
-    transition: background-color 1.6s ease;
-  }
-  body.playing .eq i { animation: eq .9s ease-in-out infinite alternate; }
-  .eq i:nth-child(2) { animation-delay: .25s; } .eq i:nth-child(3) { animation-delay: .5s; }
-  .eq i:nth-child(4) { animation-delay: .12s; }
-  @keyframes eq { from { height: 3px; } to { height: 12px; } }
+/* ============================================================
+   top bar — reports the table, edits nothing
+   ============================================================ */
+.top {
+  position: absolute; left: 3.2vw; right: 3.2vw; top: 3.6vh;
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: var(--mono); font-size: 1.6vh; color: var(--fg3);
+  z-index: 4;
+}
+.top .left { display: flex; align-items: baseline; }
+.mark {
+  font-family: var(--serif); font-style: italic; font-weight: 400;
+  font-size: 3.5vh; letter-spacing: -.02em; line-height: 1; color: var(--fg);
+  display: inline-flex; align-items: baseline;
+}
+.mark i { font-style: normal; color: var(--acid); margin-left: .3vw; }
+.top .one { margin-left: 1.8vw; }
+.top .filt { display: flex; gap: 1.8vw; align-items: center; }
+.top .filt em { font-style: normal; color: var(--fg); }
+.top .filt .dim { color: var(--fg3); }
 
-  #meta h2 { font-size: 21px; font-weight: 700; line-height: 1.25; letter-spacing: -.02em; margin-bottom: 4px; }
-  #m-artist-big { color: var(--muted); font-size: 15px; font-weight: 500; margin-bottom: 14px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-  .chip {
-    font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px;
-    background: rgba(255, 255, 255, .07); border: 1px solid var(--glass-border);
-  }
-  .chip.hot { background: var(--accent-soft); border-color: transparent; color: #ff9dec; }
-  .meta-row { display: flex; gap: 12px; padding: 4px 0; font-size: 13.5px; }
-  .meta-row .k { color: var(--muted); width: 70px; flex-shrink: 0; }
-  .meta-row a { color: #7db5f5; text-decoration: none; }
-  .meta-row a:hover { text-decoration: underline; }
+.chips { display: flex; align-items: center; gap: .5vh; }
+.chips i { width: .9vh; height: .9vh; border-radius: 50%; background: var(--acid); display: block; }
+.chips i.o { background: rgba(201,242,74,.2); }
 
-  /* vinyl */
-  .vinyl { display: grid; place-items: center; margin-top: 20px; }
-  .disc {
-    width: 210px; aspect-ratio: 1; border-radius: 50%; position: relative;
-    background:
-      radial-gradient(circle at 32% 28%, rgba(255,255,255,.22), transparent 42%),
-      repeating-radial-gradient(circle, #101013 0 2px, #1d1d22 2px 4px);
-    box-shadow: 0 18px 50px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.05);
-    animation: spin 1.82s linear infinite;   /* ~33 rpm */
-    animation-play-state: paused;
-  }
-  body.playing .disc { animation-play-state: running; }
-  .disc img {
-    position: absolute; inset: 31%; width: 38%; height: 38%; margin: auto;
-    border-radius: 50%; object-fit: cover; background: #26262c;
-  }
-  .disc img:not([src]), .lt-disc img:not([src]) { visibility: hidden; }
-  .disc::after {
-    content: ""; position: absolute; inset: 0; margin: auto; width: 7px; height: 7px;
-    border-radius: 50%; background: var(--bg); box-shadow: 0 0 0 2px rgba(255,255,255,.15);
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
+.gear {
+  height: 4vh; padding: 0 1.2vw; border-radius: 2vh;
+  border: 1px solid rgba(236,233,226,.25); background: transparent;
+  color: var(--fg2); font-family: var(--mono); font-size: 1.5vh;
+  display: flex; align-items: center; gap: .6vw;
+  transition: color .15s, border-color .15s;
+}
+.gear::before { content: "⚙"; font-size: 1.9vh; }
+.gear:hover, body.settings .gear { border-color: var(--fg); color: var(--fg); }
 
-  /* ---------- player (center) ---------- */
-  .player-wrap {
-    position: relative; width: 100%; aspect-ratio: 16 / 9;
-    background: #000; border-radius: var(--radius); overflow: hidden;
-    border: 1px solid var(--glass-border);
-    box-shadow: 0 30px 90px -25px color-mix(in srgb, var(--dyn1) 45%, transparent);
-    transition: box-shadow 1.6s ease;
-  }
-  .player-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; }
-  #status {
-    position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px;
-    align-items: center; justify-content: center;
-    color: var(--muted); font-size: 15px; text-align: center; padding: 24px; pointer-events: none;
-    background: rgba(8, 8, 11, .6); backdrop-filter: blur(6px);
-  }
-  #status b { color: var(--text); }
-  .dig-line { font-family: "Unbounded", sans-serif; font-size: 26px; font-weight: 700; color: var(--text); }
-  .dig-line span { color: var(--dyn1); transition: color 1.6s ease; }
+/* ============================================================
+   player — YouTube's own controls are never covered during playback
+   ============================================================ */
+.yt {
+  position: absolute; left: 3.2vw; top: 13vh;
+  width: var(--player-w); height: var(--player-h);
+  background: #000; border-radius: 4px; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.12), 0 3vh 8vh rgba(0,0,0,.6);
+}
+#yt { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+.pane { position: absolute; inset: 0; z-index: 2; }
 
-  /* ---------- control dock ---------- */
-  .dock {
-    width: fit-content; margin: 18px auto 0;
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px 18px; border-radius: 999px;
-    background: var(--glass); border: 1px solid var(--glass-border);
-    backdrop-filter: blur(22px) saturate(1.3);
-    -webkit-backdrop-filter: blur(22px) saturate(1.3);
-    box-shadow: 0 24px 70px -25px rgba(0, 0, 0, .9);
-  }
-  .dock button { position: relative; border-radius: 50%; display: grid; place-items: center; padding: 0; }
-  .dock button::after {
-    content: attr(data-key);
-    position: absolute; right: -3px; bottom: -3px;
-    font-size: 9px; font-weight: 700; color: var(--muted);
-    background: rgba(0, 0, 0, .6); border: 1px solid var(--glass-border);
-    border-radius: 6px; padding: 1px 4.5px; pointer-events: none;
-  }
-  .dock-btn { width: 48px; height: 48px; background: rgba(255, 255, 255, .06); }
-  .dock-btn:hover { transform: translateY(-3px) rotate(-7deg) scale(1.07); background: rgba(255, 255, 255, .13); }
-  .dock-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .dock-btn.faved { color: #ff9dec; border-color: rgba(240, 24, 200, .45); background: var(--accent-soft); }
-  .dock-btn.faved svg * { fill: currentColor; }
-  #btn-play svg * { fill: currentColor; stroke: none; }
-  #btn-play .icon-pause { display: none; }
-  body.playing #btn-play .icon-play { display: none; }
-  body.playing #btn-play .icon-pause { display: block; }
-  .dock-btn.pop { animation: pop .38s ease; }
-  @keyframes pop { 40% { transform: scale(1.35) rotate(14deg); } }
-  .dock-btn.loading { pointer-events: none; }
-  .dock-btn.loading svg { animation: dl-pulse 1s ease-in-out infinite; }
-  @keyframes dl-pulse { 0%, 100% { opacity: .35; transform: translateY(0); } 50% { opacity: 1; transform: translateY(2px); } }
+.pane-empty {
+  place-items: center; text-align: center;
+  font-family: var(--mono); font-size: 1.6vh; color: rgba(255,255,255,.3);
+  background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.03) 0 8px, transparent 8px 16px),
+    var(--bg);
+}
 
-  .dig {
-    width: 76px; height: 76px; border: none; color: #fff;
-    font-family: "Unbounded", sans-serif; font-size: 15px; font-weight: 900; letter-spacing: .05em;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    box-shadow: 0 12px 38px -8px var(--accent),
-                inset 0 2px 6px rgba(255, 255, 255, .35),
-                inset 0 -5px 12px rgba(0, 0, 0, .35);
-    animation: glowpulse 2.6s ease-in-out infinite;
-  }
-  .dig:hover { transform: scale(1.08); filter: brightness(1.12); background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
-  .dig:active { transform: scale(.92); }
-  .dig:disabled { cursor: wait; }
-  .dig.digging { animation: digshake .5s ease-in-out infinite; }
-  @keyframes glowpulse {
-    0%, 100% { box-shadow: 0 12px 38px -8px var(--accent), inset 0 2px 6px rgba(255,255,255,.35), inset 0 -5px 12px rgba(0,0,0,.35); }
-    50% { box-shadow: 0 12px 58px -4px var(--accent), inset 0 2px 6px rgba(255,255,255,.35), inset 0 -5px 12px rgba(0,0,0,.35); }
-  }
-  @keyframes digshake {
-    0%, 100% { transform: rotate(0); }
-    25% { transform: rotate(-8deg) scale(.95); }
-    75% { transform: rotate(8deg) scale(.95); }
-  }
+/* rolling: the last covers flicker past under a scanline */
+.cycler { position: absolute; inset: 0; background: #111; overflow: hidden; }
+.cycler .cv {
+  position: absolute; top: 0; bottom: 0; left: 50%; transform: translateX(-50%);
+  aspect-ratio: 1; object-fit: cover; opacity: 0;
+  background: linear-gradient(150deg, #33333a, #16161a);
+  animation: cyc .72s steps(1) infinite;
+}
+.cycler .cv:nth-child(1) { animation-delay: 0s; }
+.cycler .cv:nth-child(2) { animation-delay: .12s; }
+.cycler .cv:nth-child(3) { animation-delay: .24s; }
+.cycler .cv:nth-child(4) { animation-delay: .36s; }
+.cycler .cv:nth-child(5) { animation-delay: .48s; }
+.cycler .cv:nth-child(6) { animation-delay: .6s; }
+@keyframes cyc { 0% { opacity: 1; } 16.6% { opacity: 0; } }
+.scan {
+  position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(180deg, rgba(0,0,0,.35) 0 2px, transparent 2px 5px);
+}
 
-  button {
-    background: var(--glass); color: var(--text); border: 1px solid var(--glass-border);
-    cursor: pointer; border-radius: 14px; padding: 13px 17px; font-size: 14px; font-weight: 600;
-    font-family: inherit; backdrop-filter: blur(14px);
-    transition: transform .12s ease, background .15s, border-color .15s;
-  }
-  button:hover { background: rgba(255,255,255,.09); transform: translateY(-1px); }
-  button:active { transform: translateY(0) scale(.98); }
-  button.primary {
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    border: none; color: #fff; flex: 1; font-size: 15px; letter-spacing: .02em;
-    box-shadow: 0 10px 34px -10px var(--accent);
-  }
-  button.primary:hover { filter: brightness(1.12); }
-  button.primary:disabled { opacity: .55; cursor: wait; }
-  button .key {
-    font-size: 10.5px; font-weight: 700; opacity: .55; margin-left: 6px;
-    border: 1px solid currentColor; border-radius: 5px; padding: 1px 5px;
-  }
-  button.faved { color: #ff9dec; border-color: rgba(240,24,200,.4); }
+/* no youtube match for a real discogs release */
+.pane-nopreview {
+  place-items: center; text-align: center; padding: 0 4vh;
+  background: rgba(245,183,61,.05);
+}
+.pane-nopreview .box {
+  border: 1px dashed rgba(245,183,61,.5); border-radius: 3px;
+  padding: 3vh 3.2vh; max-width: 80%;
+}
+.pane-nopreview h4 {
+  margin: 0 0 1vh; font-family: var(--sans); font-weight: 900;
+  font-size: 2.4vh; letter-spacing: -.03em; color: var(--gold);
+}
+.pane-nopreview p { margin: 0; font-family: var(--mono); font-size: 1.5vh; color: var(--fg2); line-height: 1.6; }
+.pane-nopreview a { color: var(--gold); }
 
-  /* filters */
-  #filters { margin-top: 16px; display: none; position: relative; }
-  /* z-index lifts the open panel (and its overflowing dropdown menus) above the
-     sibling glass cards, which create their own stacking contexts via backdrop-filter */
-  #filters.open { display: block; position: relative; z-index: 50; animation: rise .28s ease; }
-  .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
-  .filter-grid label {
-    display: block; font-size: 11px; font-weight: 700; letter-spacing: .14em;
-    text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
-  }
-  .filter-grid input {
-    width: 100%; background: rgba(255,255,255,.06); border: 1px solid var(--glass-border);
-    color: var(--text); border-radius: 12px; padding: 10px 12px; font-size: 14px; font-family: inherit;
-  }
-  .year-pair { display: flex; gap: 8px; }
+/* ============================================================
+   transport
+   ============================================================ */
+.tr {
+  position: absolute; left: 3.2vw; width: var(--player-w); top: var(--transport-top);
+  display: flex; align-items: center; gap: 1.2vw;
+}
+.roll {
+  flex: 1; height: 6.4vh; padding: 0 2.6vw; border-radius: 3.2vh; border: none;
+  background: var(--acid); color: #0b0b0d;
+  font-weight: 900; font-size: 2.1vh; letter-spacing: -.02em;
+  display: flex; align-items: center; justify-content: center; gap: 1vw;
+  transition: background .15s, color .15s;
+}
+.roll small { font-family: var(--mono); font-size: 1.3vh; font-weight: 400; opacity: .6; }
+.roll:hover { background: #d7ff5e; }
+body[data-state="rolling"] .roll,
+body[data-chips="empty"] .roll {
+  background: rgba(236,233,226,.15); color: var(--fg3); pointer-events: none;
+}
+body[data-chips="empty"] .roll small { opacity: 1; }
+.ico {
+  width: 6.4vh; height: 6.4vh; flex: 0 0 auto; border-radius: 50%;
+  border: 1px solid rgba(236,233,226,.25); background: transparent;
+  color: var(--fg2); font-size: 2.1vh; display: grid; place-items: center;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.ico:hover { color: var(--fg); border-color: var(--fg); }
+.ico.on { color: var(--acid); border-color: var(--acid); background: rgba(201,242,74,.1); }
+.ico.busy { opacity: .45; pointer-events: none; }
 
-  /* ---------- custom dropdown (replaces native <select>) ---------- */
-  .csel { position: relative; }
-  .csel-trigger {
-    width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    background: rgba(255,255,255,.06); border: 1px solid var(--glass-border);
-    color: var(--text); border-radius: 12px; padding: 10px 12px; font-size: 14px; font-family: inherit;
-    text-align: left;
-  }
-  .csel-trigger:hover { background: rgba(255,255,255,.1); transform: none; }
-  .csel-chev { width: 15px; height: 15px; flex-shrink: 0; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .18s ease; }
-  .csel.open .csel-chev { transform: rotate(180deg); }
-  .csel-menu {
-    position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20;
-    background: #17171c; border: 1px solid var(--glass-border); border-radius: 14px;
-    padding: 6px; max-height: 260px; overflow-y: auto;
-    box-shadow: 0 20px 50px -12px rgba(0,0,0,.65);
-    backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
-    display: none;
-  }
-  .csel.open .csel-menu { display: block; animation: rise .16s ease; }
-  .csel-opt {
-    display: block; width: 100%; text-align: left; background: none; border: none;
-    color: var(--text); font-size: 13.5px; font-family: inherit; padding: 9px 11px;
-    border-radius: 9px; transform: none;
-  }
-  .csel-opt:hover { background: rgba(255,255,255,.08); transform: none; }
-  .csel-opt.sel { background: var(--accent-soft); color: #ff9dec; }
+/* ============================================================
+   head
+   ============================================================ */
+.head { position: absolute; left: 53vw; right: 3.2vw; top: 13vh; }
+.head .ttl {
+  font-weight: 900; font-size: 4.6vh; line-height: 1; letter-spacing: -.045em; margin: 0;
+  overflow-wrap: anywhere;
+}
+.head .ttl .art {
+  display: block; font-family: var(--mono); font-weight: 400; font-size: 1.6vh;
+  color: var(--fg2); letter-spacing: 0; margin-bottom: 1vh;
+}
+body[data-state="grail"] .head .ttl { color: var(--gold); }
+body[data-state="rolling"] .head .ttl { color: var(--fg3); }
+.head .m { font-family: var(--mono); font-size: 1.6vh; color: var(--fg2); margin-top: 1.2vh; line-height: 1.6; }
+.pill {
+  display: inline-block; font-family: var(--mono); font-size: 1.5vh;
+  padding: .5vh 1.1vh; border-radius: 3px; background: rgba(236,233,226,.08); color: var(--fg2);
+}
+.pill.g { background: var(--gold); color: #241703; font-weight: 700; }
 
-  /* ---------- custom autocomplete (replaces native <datalist> popup) ---------- */
-  .cac { position: relative; }
-  .cac-menu {
-    position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20;
-    background: #17171c; border: 1px solid var(--glass-border); border-radius: 14px;
-    padding: 6px; max-height: 230px; overflow-y: auto;
-    box-shadow: 0 20px 50px -12px rgba(0,0,0,.65);
-    backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
-    display: none;
-  }
-  .cac-menu.open { display: block; animation: rise .16s ease; }
-  .cac-opt {
-    display: block; width: 100%; text-align: left; background: none; border: none;
-    color: var(--text); font-size: 13.5px; font-family: inherit; padding: 9px 11px;
-    border-radius: 9px; transform: none;
-  }
-  .cac-opt:hover, .cac-opt.hi { background: rgba(255,255,255,.08); transform: none; }
-  .cac-opt mark { background: none; color: #ff9dec; font-weight: 700; }
-  .cac-empty { padding: 9px 11px; font-size: 13px; color: var(--muted); }
+/* ============================================================
+   run table
+   ============================================================ */
+.runs {
+  position: absolute; left: 53vw; right: 3.2vw; top: 37vh;
+  max-height: 45vh; overflow: hidden auto;
+  font-family: var(--mono); font-size: 1.6vh;
+}
+.runs .lab { color: var(--fg3); display: flex; justify-content: space-between; margin-bottom: 1vh; }
+.runs table { width: 100%; border-collapse: collapse; }
+.runs td { padding: 1.15vh 0; border-top: 1px solid var(--line); color: var(--fg2); vertical-align: middle; }
+.runs tr:last-child td { border-bottom: 1px solid var(--line); }
+.runs td.n { width: 3vw; color: var(--fg3); }
+.runs td.th { width: 5vh; }
+.runs td.th img, .runs td.th div {
+  width: 3.6vh; height: 3.6vh; border-radius: 2px; object-fit: cover;
+  background: rgba(236,233,226,.07); display: block;
+}
+.runs td.t { color: var(--fg); overflow-wrap: anywhere; }
+.runs td.t small { display: block; color: var(--fg3); font-size: 1.45vh; margin-top: .2vh; }
+.runs td.r { text-align: right; width: 8vw; white-space: nowrap; }
+.runs tr.cur td { background: rgba(201,242,74,.07); }
+.runs tr.cur td.n { color: var(--acid); }
+.runs tr.g td.t, .runs tr.g td.r, .runs tr.g td.n { color: var(--gold); }
+.runs tr.next td { color: var(--fg3); font-style: italic; }
+body[data-state="rolling"] .runs tr.cur td.t,
+body[data-state="rolling"] .runs tr.cur td.r { color: var(--fg3); }
+.runs tr.pickable { cursor: pointer; }
+.runs tr.pickable:hover td { background: rgba(236,233,226,.05); }
+.runs tr.picked td.t::before { content: "▶ "; color: var(--acid); }
+.runs .pick { margin-top: 1.4vh; color: var(--fg3); display: flex; justify-content: space-between; gap: 2vh; }
+.runs .pick .flip { color: var(--fg3); background: none; border: none; padding: 0; font: inherit; pointer-events: none; }
+.runs .pick .flip.on { color: var(--acid); pointer-events: auto; }
 
-  /* tap tempo */
-  #bpm-box { margin-top: 16px; display: none; align-items: center; gap: 20px; }
-  #bpm-box.open { display: flex; animation: rise .28s ease; }
-  .bpm-wrap { position: relative; display: grid; place-items: center; min-width: 130px; }
-  #bpm-pulse {
-    position: absolute; width: 60px; height: 60px; border-radius: 50%;
-    background: var(--dyn1); opacity: 0; transition: background-color 1.6s ease;
-  }
-  #bpm-pulse.beat { animation: beat var(--beat, 0.5s) ease-out infinite; }
-  @keyframes beat { 0% { opacity: .35; transform: scale(.6); } 100% { opacity: 0; transform: scale(1.5); } }
-  #bpm-val { font-family: "Unbounded", sans-serif; font-size: 34px; font-weight: 700; position: relative; }
-  #bpm-val small { font-size: 13px; color: var(--muted); font-weight: 700; }
+/* ============================================================
+   reserved zone — the webcam sits here in OBS. Keep it empty.
+   ============================================================ */
+.cam {
+  position: absolute; right: 2vw; bottom: 3vh; width: 13vw; aspect-ratio: 16/9;
+  pointer-events: none; z-index: 1;
+}
 
-  /* ---------- sidebar ---------- */
-  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
-  .tabs button { padding: 8px 16px; border-radius: 999px; font-size: 13px; }
-  .tabs button.active { background: var(--accent-soft); color: #ff9dec; border-color: transparent; }
-  .track { display: flex; gap: 10px; padding: 8px; border-radius: 14px; cursor: pointer; align-items: center; }
-  .track:hover { background: rgba(255,255,255,.06); }
-  .track.now { background: var(--accent-soft); }
-  .track img { width: 46px; height: 46px; border-radius: 10px; object-fit: cover; background: #222; flex-shrink: 0; }
-  .track .t { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .track .a { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .track > div { min-width: 0; flex: 1; }   /* pushes the multiplier to the right edge */
-  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 0; }
+/* ============================================================
+   settings drawer
+   ============================================================ */
+.scrim {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 19;
+  opacity: 0; pointer-events: none; transition: opacity .28s;
+}
+body.settings .scrim { opacity: 1; pointer-events: auto; }
+.drawer {
+  position: fixed; top: 0; bottom: 0; right: 0; width: 34vw; z-index: 20;
+  background: #121215; border-left: 1px solid rgba(236,233,226,.14);
+  box-shadow: -3vw 0 8vw rgba(0,0,0,.6);
+  transform: translateX(102%);
+  transition: transform .28s cubic-bezier(.2,.8,.2,1);
+  padding: 4vh 2.4vw 12vh;
+  font-family: var(--mono); font-size: 1.6vh; color: var(--fg2);
+  overflow: hidden auto;
+}
+body.settings .drawer { transform: translateX(0); }
+.drawer h3 {
+  font-family: var(--sans); font-weight: 900; font-size: 2.6vh;
+  letter-spacing: -.03em; color: var(--fg); margin: 0 0 .6vh;
+}
+.drawer .sub { color: var(--fg3); margin-bottom: 2.4vh; }
+.drawer .x {
+  position: absolute; right: 2.4vw; top: 3.6vh; width: 4vh; height: 4vh;
+  border-radius: 50%; border: 1px solid rgba(236,233,226,.25); background: none;
+  color: var(--fg); font-size: 2vh; display: grid; place-items: center;
+}
+.drawer .foot {
+  position: fixed; right: 0; bottom: 0; width: 34vw;
+  padding: 2vh 2.4vw 4vh; background: #121215;
+  display: flex; justify-content: space-between; gap: 1vw; color: var(--fg3);
+}
+.drawer .foot b { color: var(--fg); font-weight: 400; }
 
-  /* ---------- lower third (stream mode) ---------- */
-  #lowerthird {
-    display: none; margin-top: 18px; align-items: center; gap: 18px;
-    padding: 18px 24px;
-  }
-  body.stream #lowerthird { display: flex; }
-  .lt-disc {
-    width: 74px; aspect-ratio: 1; border-radius: 50%; position: relative; flex-shrink: 0;
-    background: repeating-radial-gradient(circle, #101013 0 1.5px, #1d1d22 1.5px 3px);
-    box-shadow: 0 8px 24px rgba(0,0,0,.5);
-    animation: spin 1.82s linear infinite; animation-play-state: paused;
-  }
-  body.playing .lt-disc { animation-play-state: running; }
-  .lt-disc img { position: absolute; inset: 28%; width: 44%; height: 44%; margin: auto; border-radius: 50%; object-fit: cover; }
-  .lt-text { min-width: 0; flex: 1; }
-  .lt-title { font-family: "Unbounded", sans-serif; font-size: 22px; font-weight: 700; white-space: nowrap; overflow: hidden; }
-  .lt-title span { display: inline-block; }
-  .lt-title.scroll span { padding-right: 80px; animation: marquee var(--marquee, 14s) linear infinite; }
-  @keyframes marquee { to { transform: translateX(-50%); } }
-  .lt-sub { color: var(--muted); font-size: 14px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .lt-bpm {
-    flex-shrink: 0; font-family: "Unbounded", sans-serif; font-size: 17px; font-weight: 700;
-    padding: 10px 18px; border-radius: 999px; background: var(--accent-soft); color: #ff9dec;
-  }
+/* ============================================================
+   toast
+   ============================================================ */
+.toast {
+  position: fixed; left: 50%; bottom: 4vh; transform: translate(-50%, 2vh);
+  background: #1a1a1f; border: 1px solid var(--line); border-radius: 3px;
+  padding: 1.2vh 1.8vh; font-family: var(--mono); font-size: 1.5vh; color: var(--fg);
+  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 40;
+  max-width: 60vw; text-align: center;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-  /* stream mode: hide everything except player + lower third + controls */
-  body.stream #meta, body.stream .side, body.stream #filters,
-  body.stream #bpm-box, body.stream .token-box, body.stream .slip { display: none !important; }
-  body.stream .layout { grid-template-columns: 1fr; max-width: 1060px; }
+/* ============================================================
+   reduced motion — every beat becomes an instant state change
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .cycler .cv:nth-child(1) { opacity: 1; }
+}
 
-  /* ---------- mobile ---------- */
-  @media (max-width: 640px) {
-    header { padding: 14px 14px 0; }
-    .nav { flex-wrap: wrap; row-gap: 10px; padding: 12px 14px; }
-    .token-box .hint { display: none; }
-    .token-box input { width: 130px; }
-    .layout { padding: 0 14px 110px; gap: 14px; }   /* room for the fixed dock */
-    .card { padding: 16px; }
-    #meta h2 { font-size: 18px; }
-    .vinyl { display: none; }
-    .dig-line { font-size: 19px; }
-    #status { font-size: 13.5px; }
-    .dock {
-      position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
-      z-index: 5; margin: 0; gap: 8px; padding: 8px 12px; max-width: calc(100vw - 20px);
-    }
-    .dock-btn { width: 42px; height: 42px; }
-    .dock-btn svg { width: 18px; height: 18px; }
-    .dig { width: 62px; height: 62px; font-size: 13px; }
-    #bpm-box { flex-wrap: wrap; gap: 12px; }
-    #lowerthird { gap: 10px; padding: 12px 14px; }
-    .lt-disc { width: 52px; }
-    .lt-title { font-size: 15px; }
-    .lt-sub { font-size: 12px; }
-    .lt-bpm { font-size: 13px; padding: 8px 12px; }
+/* ============================================================
+   narrow: stack instead of the 16:9 stage. Not pixel-perfect by design.
+   ============================================================ */
+@media (max-width: 1100px) {
+  body { height: auto; overflow: auto; }
+  .top, .yt, .tr, .head, .runs {
+    position: static; width: auto; left: auto; right: auto; top: auto;
+    margin: 0 20px 20px;
   }
+  .top { flex-direction: column; align-items: flex-start; gap: 12px; padding-top: 20px; font-size: 12px; }
+  .top .left { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .top .one { margin-left: 0; }
+  .top .filt { flex-wrap: wrap; gap: 14px; }
+  .mark { font-size: 30px; }
+  .yt { width: auto; height: auto; aspect-ratio: 16/9; }
+  .tr { gap: 10px; }
+  .roll { height: 54px; font-size: 17px; }
+  .roll small { font-size: 11px; }
+  .ico { width: 54px; height: 54px; font-size: 18px; }
+  .head .ttl { font-size: 34px; }
+  .head .ttl .art, .head .m, .runs { font-size: 13px; }
+  .runs { max-height: none; overflow: visible; padding-bottom: 40px; }
+  .runs td.n { width: 34px; } .runs td.th { width: 46px; }
+  .runs td.th img, .runs td.th div { width: 34px; height: 34px; }
+  .runs td.r { width: 64px; }
+  .cam { display: none; }
+  .chips i { width: 8px; height: 8px; }
+  .gear { height: 34px; font-size: 12px; padding: 0 14px; gap: 6px; }
+  .drawer { width: min(92vw, 420px); font-size: 13px; padding: 24px 20px 90px; }
+  .drawer .foot { width: min(92vw, 420px); padding: 14px 20px 24px; }
+  .drawer h3 { font-size: 22px; }
+  .drawer .x { width: 32px; height: 32px; font-size: 17px; right: 20px; top: 20px; }
+}
 
-  /* ---------- payout tier (from Discogs want/have stats) ---------- */
-  .chip.tier {
-    font-family: var(--mono); text-transform: uppercase; letter-spacing: .09em;
-    font-size: 10.5px; font-weight: 600; border-color: transparent;
-    display: inline-flex; align-items: center; gap: 7px;
-  }
-  .chip.tier::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .chip.tier-common { background: rgba(255,255,255,.06); color: var(--muted); box-shadow: inset 0 0 0 1px var(--glass-border); }
-  .chip.tier-uncommon { background: rgba(52,224,161,.11); color: var(--mint); }
-  .chip.tier-rare { background: rgba(123,47,247,.17); color: #b79bff; }
-  .chip.tier-grail { background: rgba(245,196,81,.14); color: var(--gold); text-shadow: 0 0 16px rgba(245,196,81,.5); }
-
-  /* payout line — want/have made legible under the meta rows */
-  #payout { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--glass-border); display: none; }
-  #payout.on { display: block; }
-  .payout-bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,.07); overflow: hidden; margin-bottom: 7px; }
-  .payout-bar i {
-    display: block; height: 100%; width: 0; border-radius: 3px;
-    background: linear-gradient(90deg, var(--accent-2), var(--gold));
-    transition: width .6s cubic-bezier(.2,.8,.2,1);
-  }
-  .payout-note { font-family: var(--mono); font-size: 10.5px; color: var(--muted); letter-spacing: .03em; }
-  .payout-note b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
-
-  /* ---------- chip balance (the Discogs rate-limit budget, read as a stake) ---------- */
-  .fuel {
-    display: flex; align-items: center; gap: 10px;
-    padding: 7px 14px 7px 11px; border-radius: 999px;
-    background: rgba(245,196,81,.07); border: 1px solid rgba(245,196,81,.26);
-    font-family: var(--mono); font-size: 11.5px; color: var(--gold);
-    letter-spacing: .03em; white-space: nowrap;
-  }
-  .fuel b { font-variant-numeric: tabular-nums; font-weight: 600; }
-  .chip-row { display: flex; gap: 3px; }
-  .chip-pip {
-    width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
-    box-shadow: 0 0 8px rgba(245,196,81,.5);
-    transition: background-color .35s ease, box-shadow .35s ease;
-  }
-  .chip-pip.spent { background: rgba(245,196,81,.18); box-shadow: none; }
-  .fuel.low { border-color: rgba(255,92,92,.45); background: rgba(255,92,92,.07); color: #ff8484; }
-  .fuel.low .chip-pip { background: #ff5c5c; box-shadow: 0 0 8px rgba(255,92,92,.5); }
-  .fuel.low .chip-pip.spent { background: rgba(255,92,92,.2); box-shadow: none; }
-
-  /* ---------- odds slip (the table you're playing, above the dock) ---------- */
-  .slip {
-    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-    margin-top: 16px; padding: 11px 18px; border-radius: 14px;
-    background: linear-gradient(100deg, rgba(123,47,247,.16), rgba(240,24,200,.08));
-    border: 1px solid rgba(123,47,247,.3);
-    font-family: var(--mono);
-  }
-  .slip-l { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
-  .slip-lab { font-size: 9.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
-  .slip-val { font-size: 14px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
-  .slip-val.grail { color: var(--gold); }
-  .slip-r { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--mint); }
-  .slip-r::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .slip-r.idle { color: var(--muted); }
-
-  /* ---------- session tape (history rows carry their tier and multiplier) ---------- */
-  .track .pip { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-  .pip-common { background: rgba(255,255,255,.22); }
-  .pip-uncommon { background: var(--mint); }
-  .pip-rare { background: #9b6bff; }
-  .pip-grail { background: var(--gold); box-shadow: 0 0 7px rgba(245,196,81,.8); }
-  .track .mult {
-    font-family: var(--mono); font-size: 10px; color: var(--muted);
-    font-variant-numeric: tabular-nums; flex-shrink: 0;
-  }
-  #session {
-    margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--glass-border);
-    display: none; align-items: baseline; justify-content: space-between;
-    font-family: var(--mono); font-size: 10.5px; color: var(--muted); letter-spacing: .04em;
-  }
-  #session.on { display: flex; }
-  #session b { color: var(--gold); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-
-  /* ---------- reel settle (600ms, then the video takes over) ---------- */
-  .reel { display: flex; gap: 8px; }
-  .reel i {
-    width: 46px; height: 46px; border-radius: 10px; display: block;
-    border: 1px solid var(--glass-border); background: linear-gradient(160deg, #1b1826, #100e18);
-    animation: reelroll .3s steps(2) infinite;
-  }
-  .reel i:nth-child(2) { animation-delay: .1s; }
-  .reel i:nth-child(3) { animation-delay: .2s; }
-  @keyframes reelroll {
-    50% { border-color: rgba(245,196,81,.45); background: linear-gradient(160deg, rgba(245,196,81,.18), rgba(123,47,247,.14)); }
-  }
-  .player-wrap.settle { animation: settle .6s cubic-bezier(.2,.8,.2,1); }
-  @keyframes settle {
-    0% { box-shadow: 0 0 0 2px var(--gold), 0 30px 90px -25px var(--gold); }
-    100% { box-shadow: 0 30px 90px -25px color-mix(in srgb, var(--dyn1) 45%, transparent); }
-  }
-
-  /* ---------- digging indicator (video keeps playing underneath) ---------- */
-  .pull-pill {
-    position: absolute; left: 50%; bottom: 16px;
-    transform: translateX(-50%) translateY(74px);
-    z-index: 4; display: flex; align-items: center; gap: 10px;
-    padding: 11px 22px; border-radius: 999px;
-    background: rgba(8,8,11,.74); border: 1px solid var(--glass-border);
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    font-size: 14.5px; font-weight: 600;
-    opacity: 0; pointer-events: none;
-    transition: transform .35s cubic-bezier(.2,.9,.3,1.2), opacity .3s;
-  }
-  body.digging .pull-pill { transform: translateX(-50%) translateY(0); opacity: 1; }
-  .pull-pill .spinner {
-    width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0;
-    border: 2px solid rgba(255,255,255,.2); border-top-color: var(--dyn1);
-    animation: spinfast .7s linear infinite;
-  }
-  @keyframes spinfast { to { transform: rotate(360deg); } }
-  .pull-pill #pill-word { color: var(--dyn1); font-weight: 700; transition: color 1.6s ease; }
-  body.digging .player-wrap { animation: digglow 1.2s ease-in-out infinite; }
-  @keyframes digglow {
-    0%, 100% { box-shadow: 0 30px 90px -25px color-mix(in srgb, var(--dyn1) 45%, transparent); }
-    50% { box-shadow: 0 0 70px -8px var(--dyn1); }
-  }
-
-  /* transitions */
-  .swap { animation: rise .45s cubic-bezier(.2,.8,.2,1); }
-  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-
-  .toast {
-    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(8px);
-    background: var(--glass); border: 1px solid var(--glass-border);
-    backdrop-filter: blur(18px); padding: 11px 20px;
-    border-radius: 14px; font-size: 14px; opacity: 0;
-    transition: opacity .25s, transform .25s; pointer-events: none; z-index: 10;
-  }
-  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+/* ---- legacy filter controls, restyled properly in phase 5 ---- */
+.legacy label { display: block; font-size: 1.3vh; color: var(--fg3); margin: 1.6vh 0 .6vh; }
+.legacy input, .legacy .csel-trigger {
+  width: 100%; background: rgba(236,233,226,.05); border: 1px solid var(--line);
+  color: var(--fg); border-radius: 3px; padding: 1vh 1.2vh;
+  font-family: var(--mono); font-size: 1.5vh;
+}
+.legacy .year-pair { display: flex; gap: .8vw; }
+.csel { position: relative; }
+.csel-trigger { display: flex; justify-content: space-between; align-items: center; text-align: left; }
+.csel-menu {
+  display: none; position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30;
+  background: #1a1a1f; border: 1px solid var(--line); border-radius: 3px;
+  max-height: 34vh; overflow: auto;
+}
+.csel.open .csel-menu { display: block; }
+.csel-opt, .cac-opt {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  color: var(--fg2); font-family: var(--mono); font-size: 1.5vh; padding: 1vh 1.2vh;
+}
+.csel-opt:hover, .cac-opt:hover, .cac-opt.hi { background: rgba(236,233,226,.07); color: var(--fg); }
+.csel-opt.sel { color: var(--acid); }
+.cac { position: relative; }
+.cac-menu {
+  display: none; position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30;
+  background: #1a1a1f; border: 1px solid var(--line); border-radius: 3px;
+  max-height: 34vh; overflow: auto;
+}
+.cac-menu.open { display: block; }
+.cac-opt mark { background: none; color: var(--acid); }
+.cac-empty { padding: 1vh 1.2vh; color: var(--fg3); font-size: 1.4vh; }
+.tabs { display: flex; gap: .8vw; margin: 2.4vh 0 1.4vh; }
+.tabs button { background: none; border: none; padding: 0; font-family: var(--mono); font-size: 1.5vh; color: var(--fg3); }
+.tabs button.active { color: var(--acid); }
+.track { display: flex; gap: 1vh; align-items: center; padding: 1vh 0; border-top: 1px solid var(--line); cursor: pointer; }
+.track img { width: 3.6vh; height: 3.6vh; border-radius: 2px; object-fit: cover; background: rgba(236,233,226,.07); flex: 0 0 auto; }
+.track > div { min-width: 0; flex: 1; }
+.track .t { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track .a { color: var(--fg3); font-size: 1.4vh; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track .mult { color: var(--fg2); flex: 0 0 auto; }
+.track.g .mult, .track.g .t { color: var(--gold); }
+.empty { color: var(--fg3); padding: 2vh 0; }
 </style>
 </head>
-<body>
+<body data-state="idle" data-chips="ok">
 
-<div id="bg"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
-<div id="grain"></div>
+<!-- ========== top bar: reports the table, edits nothing ========== -->
+<div class="top">
+  <div class="left">
+    <span class="mark">sample<i>casino</i></span>
+    <span class="one">pull a record you've never heard of</span>
+  </div>
+  <div class="filt">
+    <span id="t-years">1965–1985</span>
+    <span id="t-format">vinyl</span>
+    <span id="t-counts" title="Every release Discogs holds → releases matching the current filters">—</span>
+    <span class="chips" id="chip-row"></span>
+    <button class="gear" id="btn-settings">settings</button>
+  </div>
+</div>
 
-<header>
- <div class="nav">
-  <div class="logo">sample casino</div>
-  <div class="header-right">
-    <div class="fuel" id="fuel" title="Discogs API budget — 25 requests/min without a token, 60 with. One spin costs a few requests; this is how many spins you have left this minute.">
-      <div class="chip-row" id="chip-row"></div>
-      <span><b id="fuel-rolls">6</b> chips<span id="refill"></span></span>
-    </div>
-    <div class="token-box">
-      <span class="hint" title="Paste a free Discogs token to raise the table limit from 25 to 60 requests/min — roughly 6 chips to 14. Get one at discogs.com → Settings → Developers.">Discogs token</span>
-      <input id="token" type="password" placeholder="paste token…" autocomplete="off">
+<!-- ========== player ========== -->
+<div class="yt">
+  <div id="yt"></div>
+  <div class="pane pane-empty s-idle">no release loaded</div>
+  <div class="pane s-roll">
+    <div class="cycler" id="cycler"></div>
+    <div class="scan"></div>
+  </div>
+  <div class="pane pane-nopreview s-nopreview">
+    <div class="box">
+      <h4>No audio for this one</h4>
+      <p id="nopreview-copy">discogs has it, youtube doesn't — roll again, or
+        <a id="nopreview-link" href="#" target="_blank" rel="noopener">open it on discogs</a></p>
     </div>
   </div>
- </div>
-</header>
+</div>
 
-<div class="layout">
+<!-- ========== transport ========== -->
+<div class="tr">
+  <button class="roll" id="btn-roll">ROLL <small id="roll-sub">pull 01 · space</small></button>
+  <button class="ico" id="btn-fav" title="Favorite (F)" aria-label="Favorite">♡</button>
+  <button class="ico" id="btn-download" title="Download MP3 (Y)" aria-label="Download">↓</button>
+</div>
 
-  <!-- now playing -->
-  <div class="card" id="meta">
-    <div class="eyebrow"><span class="eq"><i></i><i></i><i></i><i></i></span> Last pull</div>
-    <h2 id="m-title">No spin yet</h2>
-    <div id="m-artist-big">—</div>
-    <div class="chips" id="m-chips"></div>
-    <div class="meta-row"><span class="k">Release</span><span id="m-release">—</span></div>
-    <div class="meta-row"><span class="k">Label</span><span id="m-label">—</span></div>
-    <div class="meta-row"><span class="k">Owned</span><span id="m-owned">—</span></div>
-    <div class="meta-row"><span class="k">Links</span><span id="m-links">—</span></div>
-    <div id="payout">
-      <div class="payout-bar"><i id="payout-fill"></i></div>
-      <div class="payout-note" id="payout-note"></div>
-    </div>
-    <div class="vinyl"><div class="disc"><img id="cover" alt="Cover art"></div></div>
+<!-- ========== head ========== -->
+<div class="head">
+  <div class="s-idle">
+    <h2 class="ttl"><span class="art">pull 01</span>Roll to start<br>the run.</h2>
+    <div class="m" id="idle-sub">three pulls, then chat picks one to flip</div>
   </div>
-
-  <!-- player -->
-  <div class="main">
-    <div class="player-wrap">
-      <div id="status"><div>Hit <b>SPIN</b> (or D) to pull a track from the crates.</div></div>
-      <div id="yt"></div>
-      <div class="pull-pill"><span class="spinner"></span><span>the reel is turning — <span id="pill-word">soul</span>…</span></div>
-    </div>
-
-    <!-- odds slip: the table you're playing, straight from the last Discogs count -->
-    <div class="slip">
-      <div class="slip-l">
-        <span class="slip-lab">Table</span><span class="slip-val" id="slip-pool">—</span>
-        <span class="slip-lab">Grail odds</span><span class="slip-val grail" id="slip-odds">—</span>
-      </div>
-      <div class="slip-r idle" id="slip-src">no spin yet</div>
-    </div>
-
-    <!-- lower third for stream mode -->
-    <div class="card" id="lowerthird">
-      <div class="lt-disc"><img id="lt-cover" alt=""></div>
-      <div class="lt-text">
-        <div class="lt-title" id="lt-title"><span id="lt-title-inner">Nothing playing yet</span></div>
-        <div class="lt-sub" id="lt-sub">hit D to spin</div>
-      </div>
-      <div class="lt-bpm" id="lt-bpm">— BPM</div>
-    </div>
-
-    <div class="dock">
-      <button class="dock-btn" id="btn-filters" data-key="S" title="Filters">
-        <svg viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2.2"/></svg>
-      </button>
-      <button class="dock-btn" id="btn-tempo" data-key="R" title="Tap tempo">
-        <svg viewBox="0 0 24 24"><polyline points="2 12 6 12 9 5 15 19 18 12 22 12"/></svg>
-      </button>
-      <button id="btn-random" class="dig" data-key="D" title="Spin for a random track">SPIN</button>
-      <button class="dock-btn" id="btn-play" data-key="␣" title="Play / pause">
-        <svg class="icon-play" viewBox="0 0 24 24"><polygon points="8 5.5 18.5 12 8 18.5"/></svg>
-        <svg class="icon-pause" viewBox="0 0 24 24"><rect x="7" y="5.5" width="3.4" height="13" rx="1"/><rect x="13.6" y="5.5" width="3.4" height="13" rx="1"/></svg>
-      </button>
-      <button class="dock-btn" id="btn-copy" data-key="C" title="Copy YouTube link">
-        <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-      </button>
-      <button class="dock-btn" id="btn-download" data-key="Y" title="Download audio (MP3)">
-        <svg viewBox="0 0 24 24"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 19h14"/></svg>
-      </button>
-      <button class="dock-btn" id="btn-fav" data-key="F" title="Favorite">
-        <svg viewBox="0 0 24 24"><polygon points="12 2.5 15.09 8.76 22 9.77 17 14.64 18.18 21.5 12 18.27 5.82 21.5 7 14.64 2 9.77 8.91 8.76"/></svg>
-      </button>
-    </div>
-
-    <div class="card open" id="filters">
-      <div class="filter-grid">
-        <div>
-          <label>Genre</label>
-          <div class="csel" id="csel-genre">
-            <button type="button" class="csel-trigger"><span class="csel-label">Any</span><svg class="csel-chev" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
-            <div class="csel-menu">
-              <button type="button" class="csel-opt sel" data-value="">Any</button>
-              <button type="button" class="csel-opt" data-value="Funk / Soul">Funk / Soul</button>
-              <button type="button" class="csel-opt" data-value="Jazz">Jazz</button>
-              <button type="button" class="csel-opt" data-value="Electronic">Electronic</button>
-              <button type="button" class="csel-opt" data-value="Hip Hop">Hip Hop</button>
-              <button type="button" class="csel-opt" data-value="Rock">Rock</button>
-              <button type="button" class="csel-opt" data-value="Latin">Latin</button>
-              <button type="button" class="csel-opt" data-value="Reggae">Reggae</button>
-              <button type="button" class="csel-opt" data-value="Pop">Pop</button>
-              <button type="button" class="csel-opt" data-value="Blues">Blues</button>
-              <button type="button" class="csel-opt" data-value="Folk, World, & Country">Folk, World, &amp; Country</button>
-              <button type="button" class="csel-opt" data-value="Stage & Screen">Stage &amp; Screen</button>
-              <button type="button" class="csel-opt" data-value="Classical">Classical</button>
-              <button type="button" class="csel-opt" data-value="Non-Music">Non-Music</button>
-              <button type="button" class="csel-opt" data-value="Brass & Military">Brass &amp; Military</button>
-              <button type="button" class="csel-opt" data-value="Children's">Children's</button>
-            </div>
-          </div>
-        </div>
-        <div>
-          <label>Style</label>
-          <div class="cac" id="cac-style">
-            <input id="f-style" placeholder="Any" autocomplete="off">
-            <div class="cac-menu" id="cac-style-menu"></div>
-          </div>
-        </div>
-        <div>
-          <label>Years</label>
-          <div class="year-pair">
-            <input id="f-year-from" type="number" min="1900" max="2026" placeholder="from" value="1965">
-            <input id="f-year-to" type="number" min="1900" max="2026" placeholder="to" value="1985">
-          </div>
-        </div>
-        <div>
-          <label>Country</label>
-          <input id="f-country" placeholder="Any (e.g. US, Brazil…)">
-        </div>
-        <div>
-          <label>Format</label>
-          <div class="csel" id="csel-format">
-            <button type="button" class="csel-trigger"><span class="csel-label">Vinyl only</span><svg class="csel-chev" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
-            <div class="csel-menu">
-              <button type="button" class="csel-opt sel" data-value="Vinyl">Vinyl only</button>
-              <button type="button" class="csel-opt" data-value="">Any format</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" id="bpm-box">
-      <div class="bpm-wrap">
-        <div id="bpm-pulse"></div>
-        <div id="bpm-val">— <small>BPM</small></div>
-      </div>
-      <button id="btn-tap" class="primary" style="flex:0 0 auto; padding:13px 36px;">TAP (R)</button>
-      <button id="btn-tap-reset">Reset</button>
-      <span class="hint">Tap along with the beat. Last 8 taps are averaged.</span>
+  <div class="s-roll">
+    <h2 class="ttl"><span class="art">pull <span id="c-pull">01</span> · <span class="cyc" data-k="year">1968</span> · <span class="cyc" data-k="country">Sweden</span></span>pulling…</h2>
+    <div class="m"><span class="cyc" data-k="label">Polydor</span> · <span class="cyc" data-k="hw">88 own · 201 want</span></div>
+  </div>
+  <div class="s-reveal s-nopreview">
+    <h2 class="ttl"><span class="art" id="h-line1">pull 01</span><span id="h-title">—</span></h2>
+    <div class="m">
+      <span id="h-meta">—</span><br>
+      <span class="off-grail" id="h-ratio">—</span>
+      <span class="on-grail pill g" id="h-grail">grail</span>
     </div>
   </div>
+</div>
 
-  <!-- sidebar -->
-  <div class="card side">
+<!-- ========== run table ========== -->
+<div class="runs">
+  <div class="lab"><span>this run</span><span>want / have</span></div>
+  <table><tbody id="run-body"></tbody></table>
+  <div class="pick">
+    <span id="pick-left">chat picks after 03</span>
+    <button class="flip" id="btn-flip">flip the winner →</button>
+  </div>
+</div>
+
+<!-- the webcam overlay lives here in OBS — nothing may be positioned in it -->
+<div class="cam"></div>
+
+<!-- ========== settings drawer ========== -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <button class="x" id="drawer-close" aria-label="Close settings">×</button>
+  <h3>Table</h3>
+  <div class="sub">what the roll can land on</div>
+
+  <div class="legacy">
+    <label for="csel-genre">genre</label>
+    <div class="csel" id="csel-genre">
+      <button type="button" class="csel-trigger"><span class="csel-label">Any</span><span>▾</span></button>
+      <div class="csel-menu">
+        <button type="button" class="csel-opt sel" data-value="">Any</button>
+        <button type="button" class="csel-opt" data-value="Funk / Soul">Funk / Soul</button>
+        <button type="button" class="csel-opt" data-value="Jazz">Jazz</button>
+        <button type="button" class="csel-opt" data-value="Electronic">Electronic</button>
+        <button type="button" class="csel-opt" data-value="Hip Hop">Hip Hop</button>
+        <button type="button" class="csel-opt" data-value="Rock">Rock</button>
+        <button type="button" class="csel-opt" data-value="Latin">Latin</button>
+        <button type="button" class="csel-opt" data-value="Reggae">Reggae</button>
+        <button type="button" class="csel-opt" data-value="Pop">Pop</button>
+        <button type="button" class="csel-opt" data-value="Blues">Blues</button>
+        <button type="button" class="csel-opt" data-value="Folk, World, &amp; Country">Folk, World, &amp; Country</button>
+        <button type="button" class="csel-opt" data-value="Stage &amp; Screen">Stage &amp; Screen</button>
+        <button type="button" class="csel-opt" data-value="Classical">Classical</button>
+        <button type="button" class="csel-opt" data-value="Non-Music">Non-Music</button>
+        <button type="button" class="csel-opt" data-value="Brass &amp; Military">Brass &amp; Military</button>
+        <button type="button" class="csel-opt" data-value="Children's">Children's</button>
+      </div>
+    </div>
+
+    <label for="f-style">style</label>
+    <div class="cac" id="cac-style">
+      <input id="f-style" placeholder="Any" autocomplete="off">
+      <div class="cac-menu" id="cac-style-menu"></div>
+    </div>
+
+    <label>years</label>
+    <div class="year-pair">
+      <input id="f-year-from" type="number" min="1900" max="2026" placeholder="from" value="1965">
+      <input id="f-year-to" type="number" min="1900" max="2026" placeholder="to" value="1985">
+    </div>
+
+    <label for="f-country">country</label>
+    <input id="f-country" placeholder="Any (e.g. US, Brazil…)">
+
+    <label>format</label>
+    <div class="csel" id="csel-format">
+      <button type="button" class="csel-trigger"><span class="csel-label">Vinyl only</span><span>▾</span></button>
+      <div class="csel-menu">
+        <button type="button" class="csel-opt sel" data-value="Vinyl">Vinyl only</button>
+        <button type="button" class="csel-opt" data-value="">Any format</button>
+      </div>
+    </div>
+
+    <label for="f-run-length">pulls per run</label>
+    <input id="f-run-length" type="number" min="1" max="6" value="3">
+
+    <label for="f-grail">grail threshold (× want/have)</label>
+    <input id="f-grail" type="number" min="0.1" max="20" step="0.1" value="1.5">
+
+    <label for="token">discogs token</label>
+    <input id="token" type="password" placeholder="paste token…" autocomplete="off">
+
     <div class="tabs">
       <button id="tab-history" class="active">History</button>
       <button id="tab-favs">Favorites</button>
     </div>
-    <div id="list"><div class="empty">No spins yet. The tape fills as you play.</div></div>
-    <div id="session"><span>Session</span><span id="session-stats"></span></div>
+    <div id="list"><div class="empty">No pulls yet.</div></div>
   </div>
 
-</div>
+  <div class="foot">
+    <span>chips <b id="foot-chips">—</b></span>
+    <span id="foot-refill">refill <b>—</b></span>
+    <span>table <b id="foot-table">—</b></span>
+  </div>
+</aside>
 
 <div class="toast" id="toast"></div>
 
 <script>
 const $ = id => document.getElementById(id);
 const API = 'https://api.discogs.com';
+const delay = ms => new Promise(r => setTimeout(r, ms));
 
 /* ---------- state ---------- */
-let current = null;              // {artist,title,release,year,genre,style,country,label,videoId,watchUrl,discogsUrl,cover,releaseId}
+let current = null;              // {artist,title,release,year,country,label,videoId,watchUrl,discogsUrl,cover,mult,…}
 let history = [];                // newest first
 let favs = JSON.parse(localStorage.getItem('digger_favs') || '[]');
 let activeTab = 'history';
@@ -715,17 +550,31 @@ let player = null, playerReady = false;
 let deadVideos = new Set();      // videoIds that failed to embed this session — never re-served
 let digging = false;
 
+/* ---------- settings ---------- */
+const settings = Object.assign(
+  { runLength: 3, grailThreshold: 1.5 },
+  JSON.parse(localStorage.getItem('casino_settings') || '{}')
+);
+function saveSettings() { localStorage.setItem('casino_settings', JSON.stringify(settings)); }
+
 $('token').value = localStorage.getItem('digger_token') || '';
-$('token').addEventListener('change', e => localStorage.setItem('digger_token', e.target.value.trim()));
+$('token').addEventListener('change', e => {
+  localStorage.setItem('digger_token', e.target.value.trim());
+  updateFuel();
+});
+$('f-run-length').value = settings.runLength;
+$('f-grail').value = settings.grailThreshold;
 
 /* ---------- discogs api ---------- */
 function apiHeaders() {
   const t = $('token').value.trim();
   return t ? { 'Authorization': 'Discogs token=' + t } : {};
 }
-async function api(url) {
+/* meta:true — counts against the rate limit but not against the observed
+   per-pull request cost, so the table-count probes don't distort the chip math. */
+async function api(url, opts) {
   reqLog.push(Date.now());
-  reqTotal++;
+  if (!(opts && opts.meta)) reqTotal++;
   updateFuel();
   const res = await fetch(url, { headers: apiHeaders() });
   if (res.status === 429) { rlBlockedUntil = Date.now() + 30000; updateFuel(); throw new Error('rate'); }
@@ -735,8 +584,8 @@ async function api(url) {
 
 /* ---------- chip balance ----------
    Discogs allows 25 req/min without a token, 60 with (rolling window).
-   We track our own requests; one spin costs several (search + release lookups).
-   Chips = spins left this minute, so the rate limit reads as a stake. */
+   We track our own requests; one pull costs several (search + release lookups).
+   Chips = pulls left this minute, so the rate limit reads as a stake. */
 let reqLog = [], rlBlockedUntil = 0, reqTotal = 0, digTotal = 0;
 const MAX_PIPS = 12;             // beyond this the row stops being countable at a glance
 function fuelInfo() {
@@ -754,6 +603,7 @@ function refillIn(f) {
   if (Date.now() < rlBlockedUntil) return Math.ceil((rlBlockedUntil - Date.now()) / 1000);
   return Math.max(1, Math.ceil((reqLog[0] + 60000 - Date.now()) / 1000));
 }
+function clock(secs) { return Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0'); }
 function updateFuel() {
   const f = fuelInfo();
   const pips = Math.max(1, Math.min(f.max, MAX_PIPS));
@@ -761,17 +611,19 @@ function updateFuel() {
   const row = $('chip-row');
   if (row.children.length !== pips) {
     row.innerHTML = '';
-    for (let i = 0; i < pips; i++) row.appendChild(document.createElement('i')).className = 'chip-pip';
+    for (let i = 0; i < pips; i++) row.appendChild(document.createElement('i'));
   }
-  [...row.children].forEach((el, i) => el.classList.toggle('spent', i >= lit));
-  $('fuel-rolls').textContent = f.rolls;
+  [...row.children].forEach((el, i) => el.classList.toggle('o', i >= lit));
   const secs = refillIn(f);
-  $('refill').textContent = secs === null ? '' : ' · refills 0:' + String(secs).padStart(2, '0');
-  $('fuel').classList.toggle('low', f.rolls <= 1);
+  $('foot-chips').textContent = f.rolls + ' / ' + f.max;
+  $('foot-refill').innerHTML = 'refill <b>' + (secs === null ? 'full' : clock(secs)) + '</b>';
+  document.body.dataset.chips = f.rolls > 0 ? 'ok' : 'empty';
+  if (f.rolls <= 0) $('roll-sub').textContent = 'refill ' + clock(secs || 60);
+  return f;
 }
 setInterval(updateFuel, 1000);
-updateFuel();
 
+/* ---------- filters ---------- */
 function filterParams(year) {
   const p = new URLSearchParams({ type: 'release', per_page: '25' });
   const g = selValue('csel-genre'), s = $('f-style').value.trim(),
@@ -783,21 +635,67 @@ function filterParams(year) {
   if (year) p.set('year', year);
   return p;
 }
-function randomYear() {
+function yearRange() {
   let a = parseInt($('f-year-from').value), b = parseInt($('f-year-to').value);
   if (isNaN(a) && isNaN(b)) return null;
   if (isNaN(a)) a = b; if (isNaN(b)) b = a;
   if (a > b) [a, b] = [b, a];
-  return a + Math.floor(Math.random() * (b - a + 1));
+  return [a, b];
 }
+function randomYear() {
+  const r = yearRange();
+  return r ? r[0] + Math.floor(Math.random() * (r[1] - r[0] + 1)) : null;
+}
+function baseKey() { return filterParams(null).toString(); }
 
-/* pool of candidate releases for the current filter set */
-let pool = [], poolKey = '';
-// filterKey+year -> total pages. Persisted so the one-time page-count lookup for a
-// given filter+year amortizes across refills and reloads instead of re-probing.
+/* ---------- the table: total releases → releases matching the filters ----------
+   Discogs' search API has no year-range parameter (only an exact year), so the
+   right-hand count covers genre/style/country/format and the year range is
+   reported next to it. Both counts are cached — a filter change costs two
+   per_page=1 probes, not one per keystroke. */
 const countCache = JSON.parse(localStorage.getItem('digger_pagecount') || '{}');
 function saveCountCache() { try { localStorage.setItem('digger_pagecount', JSON.stringify(countCache)); } catch (e) {} }
+const tableCounts = Object.assign({ total: null, matching: null },
+  JSON.parse(localStorage.getItem('casino_counts') || '{}'));
+let countKey = '';
 
+function fmt(n) { return n == null ? '—' : n.toLocaleString('en-US'); }
+function renderTopBar() {
+  const r = yearRange();
+  $('t-years').textContent = r ? (r[0] === r[1] ? String(r[0]) : r[0] + '–' + r[1]) : 'any year';
+  const fv = selValue('csel-format');
+  $('t-format').textContent = fv ? fv.toLowerCase() : 'any format';
+  $('t-counts').innerHTML = fmt(tableCounts.total) + ' → <em>' + fmt(tableCounts.matching) + '</em>';
+  $('foot-table').textContent = fmt(tableCounts.matching);
+}
+async function probeCount(params) {
+  const p = new URLSearchParams(params);
+  p.set('per_page', '1');
+  const d = await api(API + '/database/search?' + p, { meta: true });
+  return (d.pagination && d.pagination.items) || 0;
+}
+let countTimer = null;
+function refreshCounts() {
+  clearTimeout(countTimer);
+  countTimer = setTimeout(async () => {
+    const r = yearRange();
+    const p = filterParams(r && r[0] === r[1] ? r[0] : null);
+    const key = p.toString();
+    if (key === countKey) return;
+    countKey = key;
+    try {
+      if (tableCounts.total == null) {
+        tableCounts.total = await probeCount(new URLSearchParams({ type: 'release' }));
+      }
+      tableCounts.matching = await probeCount(p);
+      localStorage.setItem('casino_counts', JSON.stringify(tableCounts));
+    } catch (e) { /* a failed probe just leaves the last known number up */ }
+    renderTopBar();
+  }, 600);
+}
+
+/* ---------- candidate pool ---------- */
+let pool = [], poolKey = '';
 async function refillPool() {
   const year = randomYear();
   const params = filterParams(year);
@@ -822,174 +720,24 @@ async function refillPool() {
   }
   pool = d.results || [];
   poolKey = baseKey();
-  setTable(d.pagination ? d.pagination.items : null, year);
   return pool.length > 0;
 }
-function baseKey() { return filterParams(null).toString(); }
 
-/* ---------- the table & the odds ----------
-   Table size is the item count Discogs already returns with every search, so it
-   costs no extra request. Grail odds are sampled from this session's own spins
-   rather than probed — an honest running rate, not a guess. */
-let table = { items: null, year: null };
-let session = { spins: 0, grails: 0 };
-
-function setTable(items, year) {
-  if (items == null) return;
-  table = { items, year };
-  updateSlip();
-}
-function recordSpin(t) {
-  session.spins++;
-  if (t.tier === 'grail') session.grails++;
-  updateSlip();
-  renderSession();
-  const pw = document.querySelector('.player-wrap');
-  pw.classList.remove('settle'); void pw.offsetWidth; pw.classList.add('settle');
-}
-function updateSlip() {
-  $('slip-pool').textContent = table.items == null
-    ? '—'
-    : table.items.toLocaleString() + (table.items === 1 ? ' release' : ' releases');
-  $('slip-odds').textContent =
-    session.spins < 5 ? 'sampling…'
-    : session.grails ? '1 in ' + Math.round(session.spins / session.grails)
-    : 'none in ' + session.spins;
-  const src = $('slip-src');
-  src.classList.toggle('idle', table.items == null);
-  src.textContent = table.items == null
-    ? 'no spin yet'
-    : 'live from Discogs' + (table.year ? ' · ' + table.year : '');
-}
-function renderSession() {
-  $('session').classList.toggle('on', session.spins > 0);
-  $('session-stats').innerHTML =
-    '<b>' + session.spins + '</b> spin' + (session.spins === 1 ? '' : 's') +
-    ' · <b>' + session.grails + '</b> grail' + (session.grails === 1 ? '' : 's');
-}
-
-/* ---------- dig ---------- */
-async function dig() {
-  if (digging) return;
-  digging = true;
-  digTotal++;
-  const btn = $('btn-random');
-  btn.disabled = true;
-  btn.classList.add('digging');
-  startDigFx();
-
-  try {
-    let emptyRefills = 0;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      // Refill only when the current page's releases are used up or the filters
-      // changed — no arbitrary every-N-rolls refresh (it burned extra requests and
-      // could fire mid-roll). Each refill already picks a fresh random year + page.
-      if (pool.length === 0 || poolKey !== baseKey()) {
-        const ok = await refillPool();
-        if (!ok && ++emptyRefills >= 3) { digMsg('No results for these filters — try loosening them.'); return; }
-        if (!ok) continue;
-      }
-      const item = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
-      const rel = await api(item.resource_url);
-      const vids = (rel.videos || []).filter(v => v.embed && v.duration > 45 && v.duration < 900
-                                             && /youtube\.com|youtu\.be/.test(v.uri));
-      if (!vids.length) continue;
-      // try the release's videos in random order, skipping ones YouTube has deleted
-      vids.sort(() => Math.random() - .5);
-      let vid = null, videoId = null;
-      for (const v of vids) {
-        const id = (v.uri.match(/(?:v=|youtu\.be\/)([\w-]{11})/) || [])[1];
-        if (id && !deadVideos.has(id) && await videoAlive(id)) { vid = v; videoId = id; break; }
-      }
-      if (!vid) continue;
-
-      current = {
-        artist: rel.artists_sort || (rel.artists || []).map(a => a.name).join(', ') || '—',
-        title: vid.title,
-        release: rel.title,
-        year: rel.year || item.year || '—',
-        genre: (rel.genres || []).join(', ') || '—',
-        style: (rel.styles || []).join(', ') || '—',
-        genres: rel.genres || [],
-        styles: rel.styles || [],
-        country: rel.country || '—',
-        label: (rel.labels && rel.labels[0]) ? rel.labels[0].name + (rel.labels[0].catno ? ' — ' + rel.labels[0].catno : '') : '—',
-        videoId,
-        watchUrl: 'https://www.youtube.com/watch?v=' + videoId,
-        discogsUrl: rel.uri,
-        cover: item.cover_image && !item.cover_image.includes('spacer.gif') ? item.cover_image : '',
-        releaseId: rel.id,
-        tier: rarityOf(rel),
-        mult: multOf(rel),
-        have: (rel.community || {}).have || 0,
-        want: (rel.community || {}).want || 0
-      };
-      recordSpin(current);
-      play(current);
-      pushHistory(current);
-      renderMeta(current);
-      renderList();
-      updateFavBtn();
-      return;
-    }
-    digMsg('Couldn\'t find a playable video after several tries — hit SPIN again.');
-  } catch (e) {
-    if (e.message === 'rate') digMsg('Out of chips — the table refills within a minute. A free Discogs token (top right) raises the limit to 14.');
-    else digMsg('Something went wrong talking to Discogs (' + e.message + '). Try again.');
-  } finally {
-    digging = false;
-    btn.disabled = false;
-    btn.classList.remove('digging');
-    stopDigFx();
-  }
-}
-
-/* While a track is already playing, digging must not interrupt it: show the
-   pill + player glow instead of the full-screen status overlay, and route
-   error messages through toasts. The overlay is only for the empty player. */
-let pillTimer = null;
-function startDigFx() {
-  if (!current) { showDigging(); return; }
-  document.body.classList.add('digging');
-  let i = 0;
-  clearInterval(pillTimer);
-  pillTimer = setInterval(() => {
-    $('pill-word').textContent = DIG_WORDS[++i % DIG_WORDS.length];
-  }, 130);
-}
-function stopDigFx() {
-  document.body.classList.remove('digging');
-  clearInterval(pillTimer);
-}
-function digMsg(msg) {
-  if (current) toast(msg);
-  else setStatus(msg);
-}
-
-/* ---------- payout tier from Discogs collection stats ----------
+/* ---------- rarity ----------
    The multiplier is want / have: how much more the record is wanted than owned.
    It is the closest thing crate digging has to an objective rarity signal, and
    it costs nothing — Discogs already returns both numbers with the release. */
-const TIERS = [
-  { name: 'grail',    min: 4 },
-  { name: 'rare',     min: 1.5 },
-  { name: 'uncommon', min: 0.5 },
-  { name: 'common',   min: 0 }
-];
 function multOf(rel) {
   const c = rel.community || {};
   const have = c.have || 0, want = c.want || 0;
   if (!have && !want) return null;
   return want / (have + 1);
 }
-function rarityOf(rel) {
-  const m = multOf(rel);
-  if (m === null) return 'common';
-  const c = rel.community || {};
-  // Private presses barely anyone owns: a raw ratio is noisy at these counts,
-  // but a handful of owners against a crowd of wanters is a grail either way.
-  if ((c.have || 0) < 30 && (c.want || 0) > 20) return 'grail';
-  return TIERS.find(t => m >= t.min).name;
+function isGrail(t) { return t && t.mult != null && t.mult >= settings.grailThreshold; }
+function ratioText(m) {
+  return m >= 1
+    ? m.toFixed(1) + '× more wanted than owned'
+    : (1 / (m || 0.01)).toFixed(1) + '× more owned than wanted';
 }
 
 /* Dead YouTube videos serve a 120x90 placeholder thumbnail; live ones are 480x360. */
@@ -1003,27 +751,78 @@ function videoAlive(id) {
   });
 }
 
-/* ---------- player ---------- */
-let digTimer = null;
-const DIG_WORDS = ['soul', 'funk', 'jazz', 'disco', 'boogie', 'psych', 'breaks', 'dub', 'latin', 'afrobeat', 'gospel', 'library'];
-function setStatus(msg) {
-  clearInterval(digTimer);
-  $('status').innerHTML = msg;
-  $('status').style.display = msg ? 'flex' : 'none';
-}
-function showDigging() {
-  setStatus('<div class="reel"><i></i><i></i><i></i></div>' +
-            '<div class="dig-line">spinning <span id="dig-word">soul</span>…</div>' +
-            '<div>' + (table.items ? table.items.toLocaleString() + ' records deep' : 'shuffling the crates') + '</div>');
-  let i = 0;
-  digTimer = setInterval(() => {
-    const el = $('dig-word');
-    if (el) el.textContent = DIG_WORDS[++i % DIG_WORDS.length];
-  }, 130);
+/* ---------- one pull, as data ----------
+   Returns {ok:true, pull} for a playable release, or {ok:false, reason, pull?}
+   where reason is 'nopreview' (discogs has it, youtube doesn't), 'empty'
+   (no results for these filters) or 'error'. The presentation layer decides
+   what that looks like. */
+function pullFrom(rel, item, vid, videoId) {
+  const mult = multOf(rel);
+  return {
+    artist: rel.artists_sort || (rel.artists || []).map(a => a.name).join(', ') || '—',
+    title: vid ? vid.title : rel.title,
+    release: rel.title,
+    year: rel.year || item.year || '—',
+    country: rel.country || '—',
+    label: (rel.labels && rel.labels[0]) ? rel.labels[0].name : '—',
+    catno: (rel.labels && rel.labels[0] && rel.labels[0].catno) || '',
+    videoId: videoId || null,
+    watchUrl: videoId ? 'https://www.youtube.com/watch?v=' + videoId : null,
+    discogsUrl: rel.uri,
+    cover: item.cover_image && !item.cover_image.includes('spacer.gif') ? item.cover_image : '',
+    releaseId: rel.id,
+    mult,
+    have: (rel.community || {}).have || 0,
+    want: (rel.community || {}).want || 0
+  };
 }
 
+async function digOnce() {
+  if (digging) return { ok: false, reason: 'busy' };
+  digging = true;
+  digTotal++;
+  let lastRel = null, lastItem = null;
+  try {
+    let emptyRefills = 0;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      // Refill only when the current page's releases are used up or the filters
+      // changed — no arbitrary every-N-rolls refresh (it burned extra requests and
+      // could fire mid-roll). Each refill already picks a fresh random year + page.
+      if (pool.length === 0 || poolKey !== baseKey()) {
+        const ok = await refillPool();
+        if (!ok && ++emptyRefills >= 3) return { ok: false, reason: 'empty' };
+        if (!ok) continue;
+      }
+      const item = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+      const rel = await api(item.resource_url);
+      lastRel = rel; lastItem = item;
+      const vids = (rel.videos || []).filter(v => v.embed && v.duration > 45 && v.duration < 900
+                                             && /youtube\.com|youtu\.be/.test(v.uri));
+      if (!vids.length) continue;   // nothing on YouTube at all — not worth a row
+      // try the release's videos in random order, skipping ones YouTube has deleted
+      vids.sort(() => Math.random() - .5);
+      for (const v of vids) {
+        const id = (v.uri.match(/(?:v=|youtu\.be\/)([\w-]{11})/) || [])[1];
+        if (id && !deadVideos.has(id) && await videoAlive(id)) {
+          return { ok: true, pull: pullFrom(rel, item, v, id) };
+        }
+      }
+      // Discogs linked videos for this release but every one of them is gone.
+      return { ok: false, reason: 'nopreview', pull: pullFrom(rel, item, null, null) };
+    }
+    return lastRel
+      ? { ok: false, reason: 'nopreview', pull: pullFrom(lastRel, lastItem, null, null) }
+      : { ok: false, reason: 'empty' };
+  } catch (e) {
+    return { ok: false, reason: e.message === 'rate' ? 'rate' : 'error', message: e.message };
+  } finally {
+    digging = false;
+  }
+}
+
+/* ---------- player ---------- */
 function play(track) {
-  setStatus('');
+  if (!track.videoId) return;
   updateMediaSession(track);
   if (playerReady) {
     player.loadVideoById(track.videoId);
@@ -1037,27 +836,23 @@ function play(track) {
       }
     });
   } else {
-    setStatus('YouTube player still loading — one sec…');
     setTimeout(() => play(track), 600);
   }
 }
 function onPlayerError() {
   // Embed disabled / region-blocked / deleted after the fact — thumbnail-based
   // videoAlive() can't catch these (the video still exists, it just won't embed).
-  // No auto-redig: that would silently burn through the Discogs rate limit on
-  // every bad video. Remember it so this session never re-serves it, and let
-  // the person decide when to spend another dig.
-  if (current) deadVideos.add(current.videoId);
-  digMsg('That video won\'t embed here — hit SPIN for another (D)');
+  // No auto-reroll: that would silently burn through the Discogs rate limit on
+  // every bad video. Remember it so this session never re-serves it.
+  if (current && current.videoId) deadVideos.add(current.videoId);
+  toast('That video won\'t embed here — roll again (space)');
 }
 const ytScript = document.createElement('script');
 ytScript.src = 'https://www.youtube.com/iframe_api';
 document.head.appendChild(ytScript);
 
-/* sync the "playing" body class (drives vinyl spin + equalizer) with the player */
 setInterval(() => {
   const s = playerReady && player.getPlayerState ? player.getPlayerState() : -1;
-  document.body.classList.toggle('playing', s === 1);
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = s === 1 ? 'playing' : 'paused';
   if (silentAudio) {
     if (s === 1) silentAudio.play().catch(() => {});
@@ -1096,172 +891,50 @@ function updateMediaSession(t) {
   });
   navigator.mediaSession.setActionHandler('play', () => { if (playerReady) player.playVideo(); silentAudio.play().catch(() => {}); });
   navigator.mediaSession.setActionHandler('pause', () => { if (playerReady) player.pauseVideo(); silentAudio.pause(); });
-  navigator.mediaSession.setActionHandler('nexttrack', () => dig());
-  navigator.mediaSession.setActionHandler('previoustrack', playPrev);
-}
-function playPrev() {
-  if (history.length < 2) return;
-  const t = history[1];
-  current = t;
-  play(t); pushHistory(t); renderMeta(t); renderList(); updateFavBtn();
-}
-
-/* ---------- dynamic accent color from the video thumbnail ---------- */
-function extractColors(videoId) {
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    try {
-      const c = document.createElement('canvas');
-      c.width = 48; c.height = 27;
-      const x = c.getContext('2d');
-      x.drawImage(img, 0, 0, 48, 27);
-      const d = x.getImageData(0, 0, 48, 27).data;
-      let best = null, bestScore = -1;
-      for (let i = 0; i < d.length; i += 16) {
-        const r = d[i], g = d[i + 1], b = d[i + 2];
-        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-        const score = (mx ? (mx - mn) / mx : 0) * mx;   // saturation * brightness
-        if (score > bestScore) { bestScore = score; best = [r, g, b]; }
-      }
-      setAccent(bestScore > 40 ? best : null);
-    } catch (e) { setAccent(null); }
-  };
-  img.onerror = () => setAccent(null);
-  img.src = 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg';
-}
-function rgb2hsl(r, g, b) {
-  r /= 255; g /= 255; b /= 255;
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
-  if (mx === mn) return [0, 0, l];
-  const dl = mx - mn;
-  const s = l > .5 ? dl / (2 - mx - mn) : dl / (mx + mn);
-  let h = mx === r ? (g - b) / dl + (g < b ? 6 : 0) : mx === g ? (b - r) / dl + 2 : (r - g) / dl + 4;
-  return [h * 60, s, l];
-}
-function setAccent(rgb) {
-  const root = document.documentElement.style;
-  if (!rgb) { root.removeProperty('--dyn1'); root.removeProperty('--dyn2'); return; }
-  const [r, g, b] = rgb;
-  const [h, s, l] = rgb2hsl(r, g, b);
-  // keep it vivid enough to glow on a dark bg
-  root.setProperty('--dyn1', `hsl(${Math.round(h)} ${Math.round(Math.max(s, .5) * 100)}% ${Math.round(Math.min(Math.max(l, .45), .62) * 100)}%)`);
-  root.setProperty('--dyn2', `hsl(${Math.round((h + 45) % 360)} ${Math.round(Math.max(s, .5) * 100)}% 55%)`);
-}
-
-/* ---------- metadata ---------- */
-function chip(text, hot) {
-  const el = document.createElement('span');
-  el.className = 'chip' + (hot ? ' hot' : '');
-  el.textContent = text;
-  return el;
-}
-function renderMeta(t) {
-  $('m-title').textContent = t.title;
-  $('m-artist-big').textContent = t.artist;
-  const chips = $('m-chips');
-  chips.innerHTML = '';
-  if (t.tier) {
-    const tc = chip(t.tier);
-    tc.className = 'chip tier tier-' + t.tier;
-    chips.appendChild(tc);
-  }
-  if (t.year !== '—') chips.appendChild(chip(t.year, true));
-  (t.genres || []).forEach(g => chips.appendChild(chip(g)));
-  (t.styles || []).forEach(s => chips.appendChild(chip(s)));
-  if (t.country !== '—') chips.appendChild(chip(t.country));
-  $('m-release').textContent = t.release;
-  $('m-label').textContent = t.label;
-  $('m-owned').textContent = (t.have || t.want)
-    ? t.have.toLocaleString() + ' own · ' + t.want.toLocaleString() + ' want'
-    : '—';
-  renderPayout(t);
-  $('m-links').innerHTML =
-    '<a href="' + t.discogsUrl + '" target="_blank">Discogs</a> · ' +
-    '<a href="' + t.watchUrl + '" target="_blank">YouTube</a>';
-  const coverSrc = t.cover || ('https://i.ytimg.com/vi/' + t.videoId + '/hqdefault.jpg');
-  $('cover').src = coverSrc;
-  $('lt-cover').src = coverSrc;
-  updateLowerThird(t);
-  extractColors(t.videoId);
-  // re-trigger the enter animation
-  ['meta', 'lowerthird'].forEach(id => {
-    const el = $(id); el.classList.remove('swap'); void el.offsetWidth; el.classList.add('swap');
-  });
-}
-/* The payout line: the want/have multiplier the tier badge is derived from,
-   spelled out so the badge is never an unexplained verdict. */
-function renderPayout(t) {
-  const on = t.mult != null;
-  $('payout').classList.toggle('on', on);
-  if (!on) return;
-  const m = t.mult;
-  $('payout-fill').style.width = Math.min(100, Math.max(3, m / 5 * 100)) + '%';
-  $('payout-note').innerHTML = m >= 1
-    ? '<b>' + m.toFixed(1) + '×</b> more wanted than owned'
-    : '<b>' + (1 / (m || 0.01)).toFixed(1) + '×</b> more owned than wanted';
-}
-
-function updateLowerThird(t) {
-  const inner = $('lt-title-inner');
-  const title = t.artist + ' — ' + t.release;
-  const wrap = $('lt-title');
-  wrap.classList.remove('scroll');
-  inner.textContent = title;
-  $('lt-sub').textContent = [(t.tier || '').toUpperCase(), t.year, t.label, t.genre].filter(v => v && v !== '—').join(' · ');
-  requestAnimationFrame(() => {
-    if (inner.scrollWidth > wrap.clientWidth) {
-      inner.textContent = title + '   ' + title;
-      wrap.style.setProperty('--marquee', Math.max(10, title.length / 4) + 's');
-      wrap.classList.add('scroll');
-    }
-  });
+  navigator.mediaSession.setActionHandler('nexttrack', () => roll());
 }
 
 /* ---------- history & favorites ---------- */
 function pushHistory(t) {
+  if (!t.videoId) return;
   history = history.filter(h => h.videoId !== t.videoId);
   history.unshift(t);
   if (history.length > 50) history.pop();
 }
-function isFaved(t) { return t && favs.some(f => f.videoId === t.videoId); }
+function isFaved(t) { return t && t.videoId && favs.some(f => f.videoId === t.videoId); }
 function toggleFav() {
-  if (!current) return;
+  if (!current || !current.videoId) return;
   if (isFaved(current)) favs = favs.filter(f => f.videoId !== current.videoId);
   else favs.unshift(current);
   localStorage.setItem('digger_favs', JSON.stringify(favs));
   updateFavBtn(); renderList();
-  if (isFaved(current)) {
-    const b = $('btn-fav');
-    b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
-  }
   toast(isFaved(current) ? 'Added to favorites' : 'Removed from favorites');
 }
 function updateFavBtn() {
-  $('btn-fav').classList.toggle('faved', isFaved(current));
+  const on = isFaved(current);
+  $('btn-fav').classList.toggle('on', on);
+  $('btn-fav').textContent = on ? '♥' : '♡';
 }
 function renderList() {
   const items = activeTab === 'history' ? history : favs;
   const list = $('list');
+  list.innerHTML = '';
   if (!items.length) {
-    list.innerHTML = '<div class="empty">' + (activeTab === 'history' ? 'No spins yet. The tape fills as you play.' : 'No favorites yet — hit ☆ on a track you like.') + '</div>';
+    list.innerHTML = '<div class="empty">' +
+      (activeTab === 'history' ? 'No pulls yet.' : 'No favorites yet — hit ♡ on one you like.') + '</div>';
     return;
   }
-  list.innerHTML = '';
   items.forEach(t => {
     const el = document.createElement('div');
-    el.className = 'track' + (current && t.videoId === current.videoId ? ' now' : '');
+    el.className = 'track' + (isGrail(t) ? ' g' : '');
     const img = document.createElement('img');
-    img.src = t.cover || ('https://i.ytimg.com/vi/' + t.videoId + '/default.jpg');
-    img.loading = 'lazy';
+    img.src = t.cover || (t.videoId ? 'https://i.ytimg.com/vi/' + t.videoId + '/default.jpg' : '');
+    img.loading = 'lazy'; img.alt = '';
     const txt = document.createElement('div');
-    const l1 = document.createElement('div'); l1.className = 't'; l1.textContent = t.title;
+    const l1 = document.createElement('div'); l1.className = 't'; l1.textContent = t.release;
     const l2 = document.createElement('div'); l2.className = 'a'; l2.textContent = t.artist + ' · ' + t.year;
     txt.append(l1, l2);
-    const pip = document.createElement('i');
-    pip.className = 'pip pip-' + (t.tier || 'common');
-    pip.title = (t.tier || 'common') + ' pull';
-    el.append(pip, img, txt);
+    el.append(img, txt);
     if (t.mult != null) {
       const mult = document.createElement('span');
       mult.className = 'mult';
@@ -1270,64 +943,69 @@ function renderList() {
     }
     // Replay a listed track without reordering/mutating the list — clicking an
     // older entry should just jump to it, not shuffle it to the top.
-    el.onclick = () => { current = t; play(t); renderMeta(t); renderList(); updateFavBtn(); };
+    el.onclick = () => { current = t; play(t); renderHead(t); renderList(); updateFavBtn(); };
     list.appendChild(el);
   });
 }
 
-/* ---------- tap tempo ---------- */
-let taps = [];
-function tap() {
-  const now = performance.now();
-  if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
-  taps.push(now);
-  if (taps.length > 1) {
-    const iv = [];
-    for (let i = 1; i < taps.length; i++) iv.push(taps[i] - taps[i - 1]);
-    const recent = iv.slice(-8);
-    const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
-    const bpm = Math.round(60000 / avg);
-    $('bpm-val').innerHTML = bpm + ' <small>BPM</small>';
-    $('lt-bpm').textContent = bpm + ' BPM';
-    const pulse = $('bpm-pulse');
-    pulse.style.setProperty('--beat', (60 / bpm) + 's');
-    pulse.classList.add('beat');
-  }
-  if (!document.body.classList.contains('stream')) $('bpm-box').classList.add('open');
-}
-$('btn-tap').onclick = tap;
-$('btn-tap-reset').onclick = () => {
-  taps = [];
-  $('bpm-val').innerHTML = '— <small>BPM</small>';
-  $('lt-bpm').textContent = '— BPM';
-  $('bpm-pulse').classList.remove('beat');
-};
-
-/* ---------- ui wiring ---------- */
-function togglePlay() {
-  if (!playerReady || !current) return;
-  if (player.getPlayerState() === 1) {
-    player.pauseVideo();
-    document.body.classList.remove('playing');
+/* ---------- head ---------- */
+function renderHead(t) {
+  $('h-line1').textContent = ['pull ' + pad(runNo()), t.year, t.country].filter(v => v && v !== '—').join(' · ');
+  $('h-title').textContent = t.release;
+  $('h-meta').textContent = [t.artist, t.label, t.catno].filter(v => v && v !== '—').join(' · ');
+  if (t.mult == null) {
+    $('h-ratio').textContent = 'no collection data';
+    $('h-grail').textContent = 'grail';
   } else {
-    player.playVideo();
-    document.body.classList.add('playing');
+    $('h-ratio').textContent = t.have.toLocaleString() + ' own · ' + t.want.toLocaleString() + ' want · ' + ratioText(t.mult);
+    $('h-grail').textContent = 'grail · ' + ratioText(t.mult);
   }
 }
-$('btn-play').onclick = togglePlay;
-$('btn-random').onclick = dig;
-$('btn-filters').onclick = () => $('filters').classList.toggle('open');
-$('btn-tempo').onclick = () => $('bpm-box').classList.toggle('open');
-$('btn-fav').onclick = toggleFav;
-$('btn-copy').onclick = () => {
-  if (!current) return;
-  navigator.clipboard.writeText(current.watchUrl).then(() => toast('YouTube link copied'));
-};
-$('btn-download').onclick = downloadAudio;
+function pad(n) { return String(n).padStart(2, '0'); }
+
+/* ---------- run model (phase 4) ---------- */
+let run = [];
+function runNo() { return run.length || 1; }
+/* Placeholder until phase 4: the table always shows the next, empty pull. */
+function renderRun() {
+  $('run-body').innerHTML =
+    '<tr class="next"><td class="n">' + pad(run.length + 1) + '</td>' +
+    '<td class="th"></td><td class="t">\u2014</td><td class="r"></td></tr>';
+  $('pick-left').textContent = 'chat picks after ' + pad(settings.runLength);
+}
+
+/* ---------- roll (phase 2/3) ---------- */
+async function roll() {
+  const res = await digOnce();
+  if (res.ok) {
+    current = res.pull;
+    run.push(current);
+    document.body.dataset.state = isGrail(current) ? 'grail' : 'reveal';
+    play(current);
+    pushHistory(current);
+    renderHead(current);
+    renderList();
+    updateFavBtn();
+  } else if (res.reason === 'empty') {
+    toast('No results for these filters — try loosening them.');
+  } else if (res.reason === 'rate') {
+    toast('Out of chips — the table refills within a minute.');
+  } else if (res.reason === 'nopreview') {
+    current = res.pull;
+    run.push(current);
+    document.body.dataset.state = 'nopreview';
+    $('nopreview-link').href = current.discogsUrl || '#';
+    renderHead(current);
+  } else if (res.reason !== 'busy') {
+    toast('Something went wrong talking to Discogs. Try again.');
+  }
+}
+
+/* ---------- download ---------- */
 async function downloadAudio() {
-  if (!current || $('btn-download').classList.contains('loading')) return;
+  if (!current || !current.watchUrl || $('btn-download').classList.contains('busy')) return;
   const btn = $('btn-download');
-  btn.classList.add('loading');
+  btn.classList.add('busy');
   toast('Downloading audio…');
   try {
     const title = current.artist + ' - ' + current.release;
@@ -1353,15 +1031,31 @@ async function downloadAudio() {
   } catch (e) {
     toast('Download failed — is the app running via server.py (not a plain static server)?');
   } finally {
-    btn.classList.remove('loading');
+    btn.classList.remove('busy');
   }
 }
-/* Stream mode has no nav button any more — the layout is kept for a later
-   repurpose and stays reachable on V. */
-function toggleStream() {
-  const on = document.body.classList.toggle('stream');
-  toast(on ? 'Stream mode on — V to exit' : 'Stream mode off');
+
+/* ---------- drawer ---------- */
+function setDrawer(on) {
+  document.body.classList.toggle('settings', on);
+  $('drawer').setAttribute('aria-hidden', String(!on));
 }
+$('btn-settings').onclick = () => setDrawer(!document.body.classList.contains('settings'));
+$('drawer-close').onclick = () => setDrawer(false);
+$('scrim').onclick = () => setDrawer(false);
+
+/* ---------- toast ---------- */
+let toastTimer;
+function toast(msg) {
+  $('toast').textContent = msg;
+  $('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), 2400);
+}
+
+/* ---------- wiring ---------- */
+$('btn-fav').onclick = toggleFav;
+$('btn-download').onclick = downloadAudio;
 $('tab-history').onclick = () => switchTab('history');
 $('tab-favs').onclick = () => switchTab('favs');
 function switchTab(t) {
@@ -1370,14 +1064,16 @@ function switchTab(t) {
   $('tab-favs').classList.toggle('active', t === 'favs');
   renderList();
 }
-
-let toastTimer;
-function toast(msg) {
-  $('toast').textContent = msg;
-  $('toast').classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => $('toast').classList.remove('show'), 1800);
-}
+$('f-run-length').addEventListener('change', e => {
+  settings.runLength = Math.min(6, Math.max(1, parseInt(e.target.value) || 3));
+  e.target.value = settings.runLength;
+  saveSettings();
+});
+$('f-grail').addEventListener('change', e => {
+  settings.grailThreshold = Math.min(20, Math.max(.1, parseFloat(e.target.value) || 1.5));
+  e.target.value = settings.grailThreshold;
+  saveSettings();
+});
 
 /* ---------- custom dropdowns + style autocomplete ----------
    Styles are Discogs' real controlled vocabulary, grouped under the genre they
@@ -1400,7 +1096,7 @@ const GENRE_STYLES = {
   'Brass & Military': ['Brass Band', 'Marches', 'Military', 'Pipe & Drum'],
   'Children\'s': ['Educational', 'Nursery Rhymes', 'Story'],
 };
-const ANY_STYLES = ['Aboriginal', 'Abstract', 'Acid', 'Acid House', 'Acid Jazz', 'Acoustic', 'African', 'Afro Cuban', 'Afro-Cuban Jazz', 'Afrobeat', 'Alternative Rock', 'Ambient', 'Andalusian Classical', 'Arena Rock', 'Art Rock', 'Audiobook', 'Avantgarde', 'Bachata', 'Ballad', 'Baroque', 'Bass Music', 'Batucada', 'Bayou Funk', 'Beguine', 'Bengali Music', 'Bhangra', 'Big Band', 'Big Beat', 'Black Metal', 'Bluegrass', 'Blues Rock', 'Bolero', 'Bollywood', 'Boogaloo', 'Bop', 'Bossa Nova', 'Bounce', 'Brass Band', 'Breakbeat', 'Breakcore', 'Breaks', 'Brit Pop', 'Britcore', 'Broken Beat', 'Cajun', 'Calypso', 'Canzone Napoletana', 'Cape Verdean', 'Catalan Music', 'Celtic', 'Cha-Cha', 'Chanson', 'Charanga', 'Chicago Blues', 'Chiptune', 'Classic Rock', 'Classical', 'Comedy', 'Compas', 'Conjunto', 'Conscious', 'Contemporary', 'Contemporary Jazz', 'Cool Jazz', 'Corrido', 'Country', 'Country Blues', 'Country Rock', 'Crunk', 'Cuatro', 'Cubano', 'Cumbia', 'Cut-up/DJ', 'Dancehall', 'Danzon', 'Dark Ambient', 'Darkwave', 'Death Metal', 'Deep House', 'Delta Blues', 'Descarga', 'Dialogue', 'Disco', 'Dixieland', 'DJ Battle Tool', 'Doo Wop', 'Doom Metal', 'Downtempo', 'Drone', 'Drum n Bass', 'Dub', 'Dub Poetry', 'Dub Techno', 'Dubstep', 'Early', 'East Coast Blues', 'Easy Listening', 'EBM', 'Education', 'Educational', 'Electric Blues', 'Electro', 'Emo', 'Enka', 'Ethereal', 'Euro House', 'Europop', 'Experimental', 'Fado', 'Field Recording', 'Flamenco', 'Folk', 'Folk Rock', 'Forro', 'Free Funk', 'Free Improvisation', 'Free Jazz', 'Freestyle', 'Funaná', 'Funk', 'Funk Metal', 'Fusion', 'Future Jazz', 'Gabber', 'Gamelan', 'Gangsta', 'Garage House', 'Garage Rock', 'Ghetto', 'Glam', 'Glitch', 'Go-Go', 'Goa Trance', 'Gogo', 'Gospel', 'Goth Rock', 'Grime', 'Grindcore', 'Grunge', 'Guaguancó', 'Gypsy Jazz', 'Happy Hardcore', 'Hard Bop', 'Hard House', 'Hard Rock', 'Hard Trance', 'Hardcore', 'Hardstyle', 'Harmonica Blues', 'Heavy Metal', 'Hi NRG', 'Highlife', 'Hill Country Blues', 'Hillbilly', 'Hindustani', 'Hip Hop', 'Hip House', 'Honky Tonk', 'Horrorcore', 'House', 'Hyphy', 'IDM', 'Illbient', 'Indian Classical', 'Indie Rock', 'Industrial', 'Instrumental', 'Interview', 'Italo-Disco', 'Italodance', 'J-Pop', 'Jazz-Funk', 'Jazz-Rock', 'Jazzdance', 'Jibaro', 'Joropo', 'Jump Blues', 'Jumpstyle', 'Jungle', 'Junkanoo', 'Karaoke', 'Klezmer', 'Krautrock', 'Kwaito', 'Lambada', 'Latin', 'Latin Jazz', 'Laïkó', 'Leftfield', 'Llano', 'Lo-Fi', 'Louisiana Blues', 'Lounge', 'Lovers Rock', 'Luk Thung', 'Makina', 'Mambo', 'Marches', 'Mariachi', 'Marimba', 'Math Rock', 'Mbalax', 'Medieval', 'Mento', 'Merengue', 'Military', 'Min\'yō', 'Minimal', 'Mod', 'Modal', 'Modern', 'Modern Classical', 'Modern Electric Blues', 'Monologue', 'Morna', 'Movie Effects', 'MPB', 'Music Hall', 'Musical', 'Musique Concrète', 'Neo Folk', 'Neo Soul', 'Neo-Classical', 'Neo-Romantic', 'Neofolk', 'New Age', 'New Beat', 'New Jack Swing', 'New Wave', 'Noise', 'Norteño', 'Novelty', 'Nu Metal', 'Nuevo Cancion', 'Nuevo Trova', 'Nursery Rhymes', 'Oi', 'Original Glam', 'Ottoman Classical', 'P.Funk', 'Pachanga', 'Pacific', 'Parody', 'Persian Classical', 'Piano Blues', 'Piedmont Blues', 'Pipe & Drum', 'Plena', 'Poetry', 'Political', 'Polka', 'Pop Rap', 'Pop Rock', 'Post Bop', 'Post Rock', 'Post-Modern', 'Power Electronics', 'Power Pop', 'Prog Rock', 'Progressive House', 'Progressive Trance', 'Promotional', 'Psy-Trance', 'Psychedelic', 'Psychedelic Rock', 'Psychobilly', 'Public Service Announcement', 'Punk', 'Qawwali', 'Quechua', 'Radioplay', 'Ragga', 'Ragga Hip Hop', 'Ragtime', 'Ranchera', 'Rapso', 'Raï', 'Rebetiko', 'Reggae', 'Reggae Gospel', 'Reggae-Pop', 'Reggaton', 'Religious', 'Renaissance', 'Rhythm & Blues', 'Rhythmic Noise', 'RnB / Swing', 'Rock & Roll', 'Rockabilly', 'Rocksteady', 'Romantic', 'Roots Reggae', 'Rumba', 'Rune Singing', 'Salsa', 'Samba', 'Schlager', 'Score', 'Screw', 'Sea Shanties', 'Sermon', 'Shoegazer', 'Ska', 'Skiffle', 'Smooth Jazz', 'Soca', 'Soft Rock', 'Son', 'Sonero', 'Soukous', 'Soul', 'Soul-Jazz', 'Soundtrack', 'Southern Rock', 'Space Rock', 'Space-Age', 'Special Effects', 'Speech', 'Speed Garage', 'Speed Metal', 'Speedcore', 'Spoken Word', 'Steel Band', 'Stoner Rock', 'Story', 'Surf', 'Swing', 'Swingbeat', 'Symphonic Rock', 'Synth-pop', 'Tango', 'Tech House', 'Technical', 'Techno', 'Tejano', 'Texas Blues', 'Theme', 'Therapy', 'Thrash', 'Thug Rap', 'Trance', 'Tribal', 'Tribal House', 'Trimba', 'Trip Hop', 'Trova', 'UK Garage', 'US Glam / Hair Metal', 'Vallenato', 'Viking Metal', 'Vocal', 'Volksmusik', 'Zouk', 'Zydeco', 'Éntekhno'];
+const ANY_STYLES = [...new Set(Object.values(GENRE_STYLES).flat())].sort((a, b) => a.localeCompare(b));
 function styleOptionsForGenre() {
   return GENRE_STYLES[selValue('csel-genre')] || ANY_STYLES;
 }
@@ -1429,11 +1125,12 @@ function initSelect(id, onChange) {
       label.textContent = opt.textContent;
       csel.classList.remove('open');
       if (onChange) onChange(opt.dataset.value);
+      onFiltersChanged();
     });
   });
 }
 initSelect('csel-genre', () => {
-  // Styles are now genre-specific — drop a leftover style that doesn't belong to
+  // Styles are genre-specific — drop a leftover style that doesn't belong to
   // the newly picked genre, and hint the field with a relevant example.
   const style = $('f-style');
   const valid = styleOptionsForGenre().some(s => s.toLowerCase() === style.value.trim().toLowerCase());
@@ -1443,6 +1140,13 @@ initSelect('csel-genre', () => {
 });
 initSelect('csel-format');
 
+function onFiltersChanged() {
+  renderTopBar();
+  refreshCounts();
+}
+['f-style', 'f-country', 'f-year-from', 'f-year-to'].forEach(id =>
+  $(id).addEventListener('input', onFiltersChanged));
+
 (function initStyleAutocomplete() {
   const input = $('f-style'), menu = $('cac-style-menu');
   let hi = -1, opts = [];
@@ -1451,7 +1155,7 @@ initSelect('csel-format');
     opts.forEach((o, idx) => o.classList.toggle('hi', idx === i));
     if (opts[i]) opts[i].scrollIntoView({ block: 'nearest' });
   }
-  function pick(val) { input.value = val; menu.classList.remove('open'); }
+  function pick(val) { input.value = val; menu.classList.remove('open'); onFiltersChanged(); }
   function open() {
     closeSelects(null);
     const q = input.value.trim().toLowerCase();
@@ -1498,18 +1202,23 @@ document.addEventListener('click', e => {
   if (!e.target.closest('.cac')) $('cac-style-menu').classList.remove('open');
 });
 
+/* ---------- keyboard ---------- */
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { setDrawer(false); return; }
   if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.closest('.csel')) return;
   const k = e.key.toLowerCase();
-  if (k === ' ') { e.preventDefault(); togglePlay(); }
-  else if (k === 'd') dig();
-  else if (k === 'r') tap();
-  else if (k === 's') $('filters').classList.toggle('open');
-  else if (k === 'c') $('btn-copy').click();
+  if (k === ' ') { e.preventDefault(); roll(); }
   else if (k === 'f') toggleFav();
-  else if (k === 'v') toggleStream();
   else if (k === 'y') downloadAudio();
+  else if (k === 's') setDrawer(!document.body.classList.contains('settings'));
 });
+
+/* ---------- boot ---------- */
+updateFuel();
+renderTopBar();
+refreshCounts();
+renderList();
+renderRun();
 </script>
 </body>
 </html>
