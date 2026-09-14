@@ -618,7 +618,7 @@ function updateFuel() {
   $('foot-chips').textContent = f.rolls + ' / ' + f.max;
   $('foot-refill').innerHTML = 'refill <b>' + (secs === null ? 'full' : clock(secs)) + '</b>';
   document.body.dataset.chips = f.rolls > 0 ? 'ok' : 'empty';
-  if (f.rolls <= 0) $('roll-sub').textContent = 'refill ' + clock(secs || 60);
+  renderTransport();
   return f;
 }
 setInterval(updateFuel, 1000);
@@ -974,6 +974,22 @@ function renderRun() {
   $('pick-left').textContent = 'chat picks after ' + pad(settings.runLength);
 }
 
+/* The transport's sub-label is the one place the next action is spelled out,
+   so it is derived from state rather than written at each call site. */
+function renderTransport() {
+  const f = fuelInfo();
+  if (f.rolls <= 0) {
+    $('roll-sub').textContent = 'refill ' + clock(refillIn(f) || 60);
+  } else {
+    $('roll-sub').textContent = 'pull ' + pad(run.length + 1) + ' \u00b7 space';
+  }
+  const playable = !!(current && current.videoId);
+  $('btn-fav').disabled = !playable;
+  $('btn-download').disabled = !playable;
+  $('btn-fav').style.opacity = playable ? '' : '.4';
+  $('btn-download').style.opacity = playable ? '' : '.4';
+}
+
 /* ---------- roll (phase 2/3) ---------- */
 async function roll() {
   const res = await digOnce();
@@ -999,6 +1015,8 @@ async function roll() {
   } else if (res.reason !== 'busy') {
     toast('Something went wrong talking to Discogs. Try again.');
   }
+  renderRun();
+  renderTransport();
 }
 
 /* ---------- download ---------- */
@@ -1054,6 +1072,7 @@ function toast(msg) {
 }
 
 /* ---------- wiring ---------- */
+$('btn-roll').onclick = roll;
 $('btn-fav').onclick = toggleFav;
 $('btn-download').onclick = downloadAudio;
 $('tab-history').onclick = () => switchTab('history');
@@ -1219,6 +1238,7 @@ renderTopBar();
 refreshCounts();
 renderList();
 renderRun();
+renderTransport();
 </script>
 </body>
 </html>
