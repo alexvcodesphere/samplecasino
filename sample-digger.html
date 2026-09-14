@@ -422,6 +422,8 @@ body.settings .drawer { transform: translateX(0); }
 }
 .apply-note { color: var(--fg3); font-size: 1.35vh; line-height: 1.5; }
 .apply-note.pending { color: var(--acid); }
+/* --gold is grail's alone, so an empty table shouts with weight, not colour. */
+.apply-note.warn { color: var(--fg); }
 .apply {
   flex: 0 0 auto; border: none; border-radius: 999px; padding: 1vh 2vh;
   background: var(--acid); color: #0b0b0d; font: inherit; font-weight: 700; font-size: 1.5vh;
@@ -548,10 +550,10 @@ body.settings .drawer { transform: translateX(0); }
       <button class="row-head"><span>style</span><span class="val" id="v-style">any</span></button>
       <div class="row-body">
         <div class="cac">
-          <input id="f-style" type="text" placeholder="Any" autocomplete="off">
+          <input id="f-style" type="text" placeholder="Any — or Funk, Soul" autocomplete="off">
           <div class="cac-menu" id="cac-style-menu"></div>
         </div>
-        <span class="mini">Suggestions follow the genre, but the field is free text — any Discogs style works.</span>
+        <span class="mini">Suggestions follow the genre, but the field is free text — any Discogs style works. Separate several with commas; a release has to carry all of them, so the table gets smaller with each one.</span>
       </div>
     </div>
 
@@ -754,10 +756,24 @@ const DEFAULT_FILTERS = { genre: '', style: '', country: '', format: 'Vinyl', ye
 let filters = Object.assign({}, DEFAULT_FILTERS);
 let draft = Object.assign({}, filters);
 
+/* Discogs takes several styles as ONE comma-joined value and ANDs them:
+   "Funk,Soul" is the crossover, not the union, and a style nothing matches
+   takes the whole table to zero. Repeating the parameter does not work —
+   style=Funk&style=Soul silently honours only the first. */
+function styleList(v) {
+  const out = [];
+  String(v || '').split(',').forEach(part => {
+    const t = part.trim();
+    if (t && !out.some(x => x.toLowerCase() === t.toLowerCase())) out.push(t);
+  });
+  return out;
+}
+
 function paramsFor(f, year) {
   const p = new URLSearchParams({ type: 'release', per_page: '25' });
+  const styles = styleList(f.style);
   if (f.genre) p.set('genre', f.genre);
-  if (f.style.trim()) p.set('style', f.style.trim());
+  if (styles.length) p.set('style', styles.join(','));
   if (f.country.trim()) p.set('country', f.country.trim());
   if (f.format) p.set('format', f.format);
   if (year) p.set('year', year);
@@ -1586,7 +1602,6 @@ function onFiltersChanged() {
   renderApply();
   refreshCounts(draft);
 }
-$('f-style').addEventListener('input', e => { draft.style = e.target.value; renderDrawer(); onFiltersChanged(); });
 $('f-country').addEventListener('input', e => { draft.country = e.target.value; renderDrawer(); onFiltersChanged(); });
 
 /* ---------- custom dropdowns + style autocomplete ----------
@@ -1643,7 +1658,8 @@ function renderDrawer() {
     v => parseFloat(v) === settings.grailThreshold, v => { settings.grailThreshold = parseFloat(v); saveSettings(); $('f-grail').value = v; reflowGrail(); });
 
   $('v-genre').textContent = draft.genre || 'any';
-  $('v-style').textContent = draft.style.trim() || 'any';
+  const st = styleList(draft.style);
+  $('v-style').textContent = !st.length ? 'any' : st.length > 3 ? st.length + ' styles' : st.join(', ');
   $('v-country').textContent = draft.country.trim() || 'any';
   $('v-format').textContent = (FORMATS.find(f => f[0] === draft.format) || ['', 'any format'])[1];
   $('v-runlen').textContent = runLengthLabel(settings.runLength);
@@ -1666,10 +1682,15 @@ function renderApply() {
   $('btn-apply').disabled = !pending;
   $('apply-note').classList.toggle('pending', pending);
   $('apply-note').textContent = !pending
-    ? 'these are the filters the roll uses'
-    : (countMoved && n != null)
-      ? 'apply to roll on ' + fmt(n) + ' releases'
-      : 'unapplied changes — apply to use them';
+    ? (countOf(filters) === 0
+        ? 'nothing matches these filters — the roll has nothing to land on'
+        : 'these are the filters the roll uses')
+    : n === 0
+      ? 'nothing matches — loosen a filter before applying'
+      : (countMoved && n != null)
+        ? 'apply to roll on ' + fmt(n) + ' releases'
+        : 'unapplied changes — apply to use them';
+  $('apply-note').classList.toggle('warn', n === 0 || (!pending && countOf(filters) === 0));
   $('btn-settings').classList.toggle('pending', pending);
 }
 function applyFilters() {
@@ -1695,9 +1716,13 @@ function setGenre(v) {
   // Styles are genre-specific — drop a leftover style that doesn't belong to
   // the newly picked genre, and hint the field with a relevant example.
   const style = $('f-style');
-  const valid = styleOptionsForGenre().some(x => x.toLowerCase() === style.value.trim().toLowerCase());
-  if (style.value && !valid) { style.value = ''; draft.style = ''; }
-  style.placeholder = draft.genre ? 'e.g. ' + styleOptionsForGenre()[0] : 'Any';
+  const allowed = styleOptionsForGenre().map(x => x.toLowerCase());
+  const kept = styleList(style.value).filter(x => allowed.includes(x.toLowerCase()));
+  if (styleList(style.value).length !== kept.length) {
+    style.value = kept.join(', ');
+    draft.style = style.value;
+  }
+  style.placeholder = draft.genre ? 'e.g. ' + styleOptionsForGenre()[0] : 'Any — or Funk, Soul';
   $('cac-style-menu').classList.remove('open');
 }
 
@@ -1779,15 +1804,29 @@ function setYear(which, v) {
     opts.forEach((o, idx) => o.classList.toggle('hi', idx === i));
     if (opts[i]) opts[i].scrollIntoView({ block: 'nearest' });
   }
-  function pick(val) { input.value = val; draft.style = val; menu.classList.remove('open'); renderDrawer(); onFiltersChanged(); }
+  /* The field holds a comma-separated list, so completion applies to the
+     segment after the last comma — everything before it is already chosen. */
+  function head() { const i = input.value.lastIndexOf(','); return i < 0 ? '' : input.value.slice(0, i + 1) + ' '; }
+  function term() { const i = input.value.lastIndexOf(','); return input.value.slice(i + 1).trim(); }
+  function commit(v) {
+    input.value = v;
+    draft.style = v;
+    menu.classList.remove('open');
+    renderDrawer(); onFiltersChanged();
+  }
+  // Picking leaves a trailing comma so the next style can be typed straight on.
+  function pick(val) { commit(head() + val + ', '); input.focus(); }
   function open() {
-    const q = input.value.trim().toLowerCase();
-    const pool = styleOptionsForGenre();
+    const q = term().toLowerCase();
+    const chosen = styleList(head()).map(x => x.toLowerCase());
+    const pool = styleOptionsForGenre().filter(s => !chosen.includes(s.toLowerCase()));
     let matches = q ? pool.filter(s => s.toLowerCase().includes(q)) : pool.slice();
     // rank styles that *start with* the query above mid-word matches
     if (q) matches.sort((a, b) => (b.toLowerCase().startsWith(q)) - (a.toLowerCase().startsWith(q)));
     if (!matches.length) {
-      menu.innerHTML = '<div class="cac-empty">No matching style — it\'ll still search as typed</div>';
+      menu.innerHTML = '<div class="cac-empty">' + (q
+        ? 'No matching style — it\'ll still search as typed'
+        : 'Every suggested style for this genre is already listed') + '</div>';
       opts = []; hi = -1; menu.classList.add('open'); return;
     }
     const CAP = 60;
@@ -1809,7 +1848,7 @@ function setYear(which, v) {
     menu.classList.add('open');
   }
   input.addEventListener('focus', open);
-  input.addEventListener('input', open);
+  input.addEventListener('input', e => { draft.style = e.target.value; renderDrawer(); onFiltersChanged(); open(); });
   input.addEventListener('keydown', e => {
     if (!menu.classList.contains('open')) { if (e.key === 'ArrowDown') open(); return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); setHi(Math.min(hi + 1, opts.length - 1)); }
