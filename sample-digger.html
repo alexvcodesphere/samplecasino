@@ -123,9 +123,16 @@ body[data-state="grail"]       .off-grail { display: none !important; }
 .cycler .cv {
   position: absolute; top: 0; bottom: 0; left: 50%; transform: translateX(-50%);
   aspect-ratio: 1; object-fit: cover; opacity: 0;
-  background: linear-gradient(150deg, #33333a, #16161a);
   animation: cyc .72s steps(1) infinite;
 }
+/* Stand-ins for the first roll of a session, before any cover has been seen.
+   Muted enough to stay out of the palette, distinct enough to read as motion. */
+.cycler .cv:nth-child(1) { background: linear-gradient(150deg, #5b2a6b, #2d1338 60%, #120818); }
+.cycler .cv:nth-child(2) { background: linear-gradient(160deg, #6b5836, #3a2f1c); }
+.cycler .cv:nth-child(3) { background: linear-gradient(160deg, #1f4e6b, #0d2233); }
+.cycler .cv:nth-child(4) { background: linear-gradient(140deg, #7a2a1c, #3a1209); }
+.cycler .cv:nth-child(5) { background: linear-gradient(180deg, #4a4636, #22201a); }
+.cycler .cv:nth-child(6) { background: linear-gradient(135deg, #0b5f4a, #052b22); }
 .cycler .cv:nth-child(1) { animation-delay: 0s; }
 .cycler .cv:nth-child(2) { animation-delay: .12s; }
 .cycler .cv:nth-child(3) { animation-delay: .24s; }
@@ -409,9 +416,8 @@ body.settings .drawer { transform: translateX(0); }
   </div>
   <div class="pane pane-nopreview s-nopreview">
     <div class="box">
-      <h4>No audio for this one</h4>
-      <p id="nopreview-copy">discogs has it, youtube doesn't — roll again, or
-        <a id="nopreview-link" href="#" target="_blank" rel="noopener">open it on discogs</a></p>
+      <h4 id="nopreview-head">No audio for this one</h4>
+      <p id="nopreview-copy"></p>
     </div>
   </div>
 </div>
@@ -515,7 +521,7 @@ body.settings .drawer { transform: translateX(0); }
     <input id="f-run-length" type="number" min="1" max="6" value="3">
 
     <label for="f-grail">grail threshold (× want/have)</label>
-    <input id="f-grail" type="number" min="0.1" max="20" step="0.1" value="1.5">
+    <input id="f-grail" type="number" min="1" max="20" step="0.1" value="1.5">
 
     <label for="token">discogs token</label>
     <input id="token" type="password" placeholder="paste token…" autocomplete="off">
@@ -966,6 +972,8 @@ function pad(n) { return String(n).padStart(2, '0'); }
 /* ---------- run model (phase 4) ---------- */
 let run = [];
 function runNo() { return run.length || 1; }
+function runComplete() { return run.length >= settings.runLength; }
+function newRun() { run = []; current = null; renderRun(); }
 /* Placeholder until phase 4: the table always shows the next, empty pull. */
 function renderRun() {
   $('run-body').innerHTML =
@@ -990,34 +998,140 @@ function renderTransport() {
   $('btn-download').style.opacity = playable ? '' : '.4';
 }
 
-/* ---------- roll (phase 2/3) ---------- */
+/* ---------- the state machine ----------
+   Four beats — idle, rolling, reveal, grail — plus two edge states.
+   `beat` is the single value the page renders from; it is mirrored onto
+   <body data-state> and every visual difference is a CSS rule on that
+   attribute, never a scattered boolean.
+
+   nochips is the one state that does NOT replace the beat: §4.6 says
+   "everything else stays as it was", so making it a beat would blank a
+   reveal that is still playing. It rides on <body data-chips> instead and
+   only touches ROLL and the chip dots. currentState() reports the pair as
+   one value for anything that needs to ask. */
+let beat = 'idle';
+let rollGen = 0;
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
+
+function currentState() { return fuelInfo().rolls <= 0 ? 'nochips' : beat; }
+
+function setState(s) {
+  beat = s;
+  document.body.dataset.state = s;
+  if (s === 'rolling') startCyclers(); else stopCyclers();
+  renderTransport();
+}
+
+/* ---------- the rolling beat ----------
+   1.5s of cover flicker and random header fields. Long enough to read as a
+   pull, short enough not to be a loading spinner. */
+const ROLL_MS = 1500, ROLL_CAP_MS = 6000;
+const POOLS = {
+  year: () => { const r = yearRange(); return r ? r[0] + Math.floor(Math.random() * (r[1] - r[0] + 1)) : 1900 + Math.floor(Math.random() * 126); },
+  country: () => pick(['Sweden', 'Belgium', 'Japan', 'Brazil', 'Nigeria', 'Italy', 'France', 'Turkey', 'Peru', 'Ghana', 'Finland', 'Yugoslavia', 'US', 'UK', 'Colombia', 'Greece']),
+  label: () => pick(['Polydor', 'Barclay', 'Omega International', 'Sonet', 'CBS', 'Selecta', 'Philips', 'Decca', 'Vogue', 'Ariola', 'RCA Victor', 'Odeon', 'Trojan', 'Musidisc']),
+  hw: () => Math.floor(Math.random() * 400 + 20) + ' own \u00b7 ' + Math.floor(Math.random() * 400 + 20) + ' want'
+};
+function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+
+let cycTimer = null;
+function startCyclers() {
+  $('c-pull').textContent = pad(run.length + 1);
+  renderCycler();
+  const tick = () => document.querySelectorAll('.cyc').forEach(el => { el.textContent = POOLS[el.dataset.k](); });
+  tick();
+  if (REDUCED.matches) return;   // reduced motion: one static set of values, no flicker
+  clearInterval(cycTimer);
+  cycTimer = setInterval(tick, 70);
+}
+function stopCyclers() { clearInterval(cycTimer); cycTimer = null; }
+
+/* The last six covers we have seen, newest first, so the flicker is made of
+   records this session actually pulled rather than stock imagery. */
+function renderCycler() {
+  const seen = [], out = [];
+  [...run].reverse().concat(history).forEach(t => {
+    const src = t.cover || (t.videoId ? 'https://i.ytimg.com/vi/' + t.videoId + '/hqdefault.jpg' : '');
+    if (src && !seen.includes(src)) { seen.push(src); }
+  });
+  const box = $('cycler');
+  box.innerHTML = '';
+  for (let i = 0; i < 6; i++) {
+    if (seen[i]) {
+      const img = document.createElement('img');
+      img.className = 'cv'; img.src = seen[i]; img.alt = '';
+      out.push(img);
+    } else {
+      const d = document.createElement('div');
+      d.className = 'cv';
+      out.push(d);
+    }
+  }
+  box.append(...out);
+}
+
+/* ---------- a roll ---------- */
 async function roll() {
-  const res = await digOnce();
-  if (res.ok) {
+  if (beat === 'rolling') return;
+  if (currentState() === 'nochips') { toast('Out of chips — the table refills within a minute.'); return; }
+  if (runComplete()) { newRun(); }
+
+  const gen = ++rollGen;
+  const back = beat;
+  setState('rolling');
+
+  const started = Date.now();
+  const digP = digOnce();
+  // Whichever finishes last wins: the beat never ends early, and a slow
+  // Discogs holds it open — up to a cap, past which we own up to the failure.
+  const res = await Promise.race([
+    digP,
+    delay(ROLL_CAP_MS).then(() => ({ ok: false, reason: 'timeout' }))
+  ]);
+  const left = ROLL_MS - (Date.now() - started);
+  if (left > 0 && !REDUCED.matches) await delay(left);
+  if (gen !== rollGen) return;   // a newer roll superseded this one
+
+  commitPull(res, back);
+}
+
+function commitPull(res, back) {
+  if (res.ok || res.reason === 'nopreview') {
     current = res.pull;
     run.push(current);
-    document.body.dataset.state = isGrail(current) ? 'grail' : 'reveal';
-    play(current);
-    pushHistory(current);
+    if (res.ok) {
+      setState(isGrail(current) ? 'grail' : 'reveal');
+      play(current);
+      pushHistory(current);
+    } else {
+      setState('nopreview');
+      $('nopreview-head').textContent = 'No audio for this one';
+      $('nopreview-copy').innerHTML = 'discogs has it, youtube doesn\'t \u2014 roll again, or ' +
+        '<a href="' + escapeAttr(current.discogsUrl || '#') + '" target="_blank" rel="noopener">open it on discogs</a>';
+    }
     renderHead(current);
     renderList();
     updateFavBtn();
+  } else if (res.reason === 'timeout') {
+    setState('nopreview');
+    $('nopreview-head').textContent = 'That one took too long';
+    $('nopreview-copy').textContent = 'discogs didn\'t answer in six seconds \u2014 roll again';
   } else if (res.reason === 'empty') {
+    setState(back);
     toast('No results for these filters — try loosening them.');
   } else if (res.reason === 'rate') {
+    setState(back);
     toast('Out of chips — the table refills within a minute.');
-  } else if (res.reason === 'nopreview') {
-    current = res.pull;
-    run.push(current);
-    document.body.dataset.state = 'nopreview';
-    $('nopreview-link').href = current.discogsUrl || '#';
-    renderHead(current);
-  } else if (res.reason !== 'busy') {
+  } else if (res.reason === 'busy') {
+    setState(back);
+  } else {
+    setState(back);
     toast('Something went wrong talking to Discogs. Try again.');
   }
   renderRun();
   renderTransport();
 }
+function escapeAttr(v) { return String(v).replace(/"/g, '&quot;'); }
 
 /* ---------- download ---------- */
 async function downloadAudio() {
@@ -1089,7 +1203,7 @@ $('f-run-length').addEventListener('change', e => {
   saveSettings();
 });
 $('f-grail').addEventListener('change', e => {
-  settings.grailThreshold = Math.min(20, Math.max(.1, parseFloat(e.target.value) || 1.5));
+  settings.grailThreshold = Math.min(20, Math.max(1, parseFloat(e.target.value) || 1.5));
   e.target.value = settings.grailThreshold;
   saveSettings();
 });
@@ -1238,7 +1352,7 @@ renderTopBar();
 refreshCounts();
 renderList();
 renderRun();
-renderTransport();
+setState('idle');
 </script>
 </body>
 </html>
