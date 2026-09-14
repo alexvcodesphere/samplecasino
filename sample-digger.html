@@ -346,48 +346,97 @@ body.settings .drawer { transform: translateX(0); }
   .drawer .x { width: 32px; height: 32px; font-size: 17px; right: 20px; top: 20px; }
 }
 
-/* ---- legacy filter controls, restyled properly in phase 5 ---- */
-.legacy label { display: block; font-size: 1.3vh; color: var(--fg3); margin: 1.6vh 0 .6vh; }
-.legacy input, .legacy .csel-trigger {
+/* ============================================================
+   drawer contents
+   ============================================================ */
+.dtabs { display: flex; gap: 1.6vw; margin: 0 0 2.8vh; }
+.dtabs button {
+  background: none; border: none; padding: 0 0 .8vh; font: inherit;
+  color: var(--fg3); border-bottom: 1px solid transparent;
+}
+.dtabs button.active { color: var(--fg); border-bottom-color: var(--acid); }
+.drawer h4 { font-family: var(--mono); font-weight: 400; font-size: 1.5vh; color: var(--fg3); margin: 3vh 0 1.2vh; }
+.mini { font-size: 1.35vh; color: var(--fg3); line-height: 1.6; margin: 1.2vh 0 0; display: block; }
+
+.row { border-top: 1px solid var(--line); }
+.row:last-of-type { border-bottom: 1px solid var(--line); }
+.row-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 1vw;
+  width: 100%; padding: 1.5vh 0; background: none; border: none;
+  font: inherit; color: var(--fg3); text-align: left;
+}
+.row-head .val { color: var(--fg); display: flex; align-items: center; gap: .8vw; text-align: right; }
+.row-head .val::after { content: "›"; color: var(--fg3); font-size: 2vh; transition: transform .18s; }
+.row[data-open="true"] .row-head .val::after { transform: rotate(90deg); }
+.row-head:hover { color: var(--fg2); }
+.row-body { display: none; padding: 0 0 1.8vh; }
+.row[data-open="true"] .row-body { display: block; }
+
+.opts { display: flex; flex-wrap: wrap; gap: .6vh; }
+.opt {
+  background: rgba(236,233,226,.05); border: 1px solid var(--line); border-radius: 999px;
+  padding: .7vh 1.2vh; font: inherit; font-size: 1.45vh; color: var(--fg2);
+}
+.opt:hover { color: var(--fg); border-color: rgba(236,233,226,.35); }
+.opt[aria-pressed="true"] { background: var(--acid); border-color: var(--acid); color: #0b0b0d; font-weight: 700; }
+
+.drawer input[type="text"], .drawer input[type="password"], .drawer input[type="number"] {
   width: 100%; background: rgba(236,233,226,.05); border: 1px solid var(--line);
-  color: var(--fg); border-radius: 3px; padding: 1vh 1.2vh;
-  font-family: var(--mono); font-size: 1.5vh;
+  border-radius: 3px; padding: 1vh 1.2vh;
+  font-family: var(--mono); font-size: 1.5vh; color: var(--fg);
 }
-.legacy .year-pair { display: flex; gap: .8vw; }
-.csel { position: relative; }
-.csel-trigger { display: flex; justify-content: space-between; align-items: center; text-align: left; }
-.csel-menu {
-  display: none; position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30;
-  background: #1a1a1f; border: 1px solid var(--line); border-radius: 3px;
-  max-height: 34vh; overflow: auto;
+.drawer input:focus-visible { outline: 1px solid var(--acid); outline-offset: 1px; }
+
+/* two-handle year range */
+.range { padding: 1.5vh 0; border-top: 1px solid var(--line); }
+.range .hd { display: flex; justify-content: space-between; margin-bottom: 2vh; color: var(--fg3); }
+.range .hd b { color: var(--fg); font-weight: 400; }
+.track { position: relative; height: .3vh; background: rgba(236,233,226,.18); margin: 0 .9vh 1vh; }
+.track .fill { position: absolute; top: 0; bottom: 0; background: var(--acid); }
+.track .h {
+  position: absolute; top: 50%; width: 1.8vh; height: 1.8vh; border-radius: 50%;
+  background: var(--fg); transform: translate(-50%, -50%); cursor: grab; touch-action: none;
 }
-.csel.open .csel-menu { display: block; }
-.csel-opt, .cac-opt {
-  display: block; width: 100%; text-align: left; background: none; border: none;
-  color: var(--fg2); font-family: var(--mono); font-size: 1.5vh; padding: 1vh 1.2vh;
-}
-.csel-opt:hover, .cac-opt:hover, .cac-opt.hi { background: rgba(236,233,226,.07); color: var(--fg); }
-.csel-opt.sel { color: var(--acid); }
+.track .h:active { cursor: grabbing; }
+.track .h:focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
+
+/* style autocomplete */
 .cac { position: relative; }
 .cac-menu {
   display: none; position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30;
   background: #1a1a1f; border: 1px solid var(--line); border-radius: 3px;
-  max-height: 34vh; overflow: auto;
+  max-height: 30vh; overflow: auto;
 }
 .cac-menu.open { display: block; }
+.cac-opt {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  color: var(--fg2); font-family: var(--mono); font-size: 1.45vh; padding: .9vh 1.2vh;
+}
+.cac-opt:hover, .cac-opt.hi { background: rgba(236,233,226,.07); color: var(--fg); }
 .cac-opt mark { background: none; color: var(--acid); }
-.cac-empty { padding: 1vh 1.2vh; color: var(--fg3); font-size: 1.4vh; }
-.tabs { display: flex; gap: .8vw; margin: 2.4vh 0 1.4vh; }
-.tabs button { background: none; border: none; padding: 0; font-family: var(--mono); font-size: 1.5vh; color: var(--fg3); }
+.cac-empty { padding: .9vh 1.2vh; color: var(--fg3); font-size: 1.35vh; }
+
+/* history / favorites */
+.tabs { display: flex; gap: 1.4vw; margin: 0 0 .6vh; }
+.tabs button { background: none; border: none; padding: 0; font: inherit; color: var(--fg3); }
 .tabs button.active { color: var(--acid); }
-.track { display: flex; gap: 1vh; align-items: center; padding: 1vh 0; border-top: 1px solid var(--line); cursor: pointer; }
-.track img { width: 3.6vh; height: 3.6vh; border-radius: 2px; object-fit: cover; background: rgba(236,233,226,.07); flex: 0 0 auto; }
-.track > div { min-width: 0; flex: 1; }
-.track .t { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.track .a { color: var(--fg3); font-size: 1.4vh; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.track .mult { color: var(--fg2); flex: 0 0 auto; }
-.track.g .mult, .track.g .t { color: var(--gold); }
+.track-row { display: flex; gap: 1.2vh; align-items: center; padding: 1vh 0; border-top: 1px solid var(--line); width: 100%; background: none; border-left: 0; border-right: 0; border-bottom: 0; text-align: left; font: inherit; color: inherit; }
+.track-row:hover { background: rgba(236,233,226,.04); }
+.track-row img { width: 3.6vh; height: 3.6vh; border-radius: 2px; object-fit: cover; background: rgba(236,233,226,.07); flex: 0 0 auto; }
+.track-row > div { min-width: 0; flex: 1; }
+.track-row .t { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track-row .a { color: var(--fg3); font-size: 1.4vh; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track-row .mult { color: var(--fg2); flex: 0 0 auto; }
+.track-row.g .mult { color: var(--gold); }
 .empty { color: var(--fg3); padding: 2vh 0; }
+.statline { display: flex; justify-content: space-between; align-items: center; gap: 1vw; padding: 1.4vh 0; border-top: 1px solid var(--line); color: var(--fg3); }
+.statline b { color: var(--fg); font-weight: 400; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: .9vh 1.2vw; font-size: 1.45vh; }
+.keys kbd {
+  font-family: var(--mono); font-size: 1.3vh; color: var(--fg2);
+  border: 1px solid var(--line); border-radius: 3px; padding: .2vh .7vh; justify-self: start;
+}
+.keys span { color: var(--fg3); }
 </style>
 </head>
 <body data-state="idle" data-chips="ok">
@@ -467,72 +516,92 @@ body.settings .drawer { transform: translateX(0); }
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" aria-hidden="true">
   <button class="x" id="drawer-close" aria-label="Close settings">×</button>
-  <h3>Table</h3>
-  <div class="sub">what the roll can land on</div>
 
-  <div class="legacy">
-    <label for="csel-genre">genre</label>
-    <div class="csel" id="csel-genre">
-      <button type="button" class="csel-trigger"><span class="csel-label">Any</span><span>▾</span></button>
-      <div class="csel-menu">
-        <button type="button" class="csel-opt sel" data-value="">Any</button>
-        <button type="button" class="csel-opt" data-value="Funk / Soul">Funk / Soul</button>
-        <button type="button" class="csel-opt" data-value="Jazz">Jazz</button>
-        <button type="button" class="csel-opt" data-value="Electronic">Electronic</button>
-        <button type="button" class="csel-opt" data-value="Hip Hop">Hip Hop</button>
-        <button type="button" class="csel-opt" data-value="Rock">Rock</button>
-        <button type="button" class="csel-opt" data-value="Latin">Latin</button>
-        <button type="button" class="csel-opt" data-value="Reggae">Reggae</button>
-        <button type="button" class="csel-opt" data-value="Pop">Pop</button>
-        <button type="button" class="csel-opt" data-value="Blues">Blues</button>
-        <button type="button" class="csel-opt" data-value="Folk, World, &amp; Country">Folk, World, &amp; Country</button>
-        <button type="button" class="csel-opt" data-value="Stage &amp; Screen">Stage &amp; Screen</button>
-        <button type="button" class="csel-opt" data-value="Classical">Classical</button>
-        <button type="button" class="csel-opt" data-value="Non-Music">Non-Music</button>
-        <button type="button" class="csel-opt" data-value="Brass &amp; Military">Brass &amp; Military</button>
-        <button type="button" class="csel-opt" data-value="Children's">Children's</button>
+  <div class="dtabs">
+    <button id="dtab-table" class="active">Table</button>
+    <button id="dtab-log">Log</button>
+  </div>
+
+  <section id="sec-table">
+    <h3>Table</h3>
+    <div class="sub">what the roll can land on</div>
+
+    <div class="row" data-row="genre" data-open="false">
+      <button class="row-head"><span>genre</span><span class="val" id="v-genre">any</span></button>
+      <div class="row-body"><div class="opts" id="opts-genre"></div></div>
+    </div>
+
+    <div class="row" data-row="style" data-open="false">
+      <button class="row-head"><span>style</span><span class="val" id="v-style">any</span></button>
+      <div class="row-body">
+        <div class="cac">
+          <input id="f-style" type="text" placeholder="Any" autocomplete="off">
+          <div class="cac-menu" id="cac-style-menu"></div>
+        </div>
+        <span class="mini">Suggestions follow the genre, but the field is free text — any Discogs style works.</span>
       </div>
     </div>
 
-    <label for="f-style">style</label>
-    <div class="cac" id="cac-style">
-      <input id="f-style" placeholder="Any" autocomplete="off">
-      <div class="cac-menu" id="cac-style-menu"></div>
+    <div class="range">
+      <div class="hd"><span>years</span><b id="v-years">1965 – 1985</b></div>
+      <div class="track" id="yr-track">
+        <div class="fill" id="yr-fill"></div>
+        <i class="h" id="yr-a" role="slider" tabindex="0" aria-label="Earliest year"></i>
+        <i class="h" id="yr-b" role="slider" tabindex="0" aria-label="Latest year"></i>
+      </div>
+      <input id="f-year-from" type="hidden" value="1965">
+      <input id="f-year-to" type="hidden" value="1985">
     </div>
 
-    <label>years</label>
-    <div class="year-pair">
-      <input id="f-year-from" type="number" min="1900" max="2026" placeholder="from" value="1965">
-      <input id="f-year-to" type="number" min="1900" max="2026" placeholder="to" value="1985">
+    <div class="row" data-row="country" data-open="false">
+      <button class="row-head"><span>country</span><span class="val" id="v-country">any</span></button>
+      <div class="row-body"><input id="f-country" type="text" placeholder="Any (e.g. US, Brazil…)"></div>
     </div>
 
-    <label for="f-country">country</label>
-    <input id="f-country" placeholder="Any (e.g. US, Brazil…)">
+    <div class="row" data-row="format" data-open="false">
+      <button class="row-head"><span>format</span><span class="val" id="v-format">vinyl only</span></button>
+      <div class="row-body"><div class="opts" id="opts-format"></div></div>
+    </div>
 
-    <label>format</label>
-    <div class="csel" id="csel-format">
-      <button type="button" class="csel-trigger"><span class="csel-label">Vinyl only</span><span>▾</span></button>
-      <div class="csel-menu">
-        <button type="button" class="csel-opt sel" data-value="Vinyl">Vinyl only</button>
-        <button type="button" class="csel-opt" data-value="">Any format</button>
+    <div class="row" data-row="runlen" data-open="false">
+      <button class="row-head"><span>pulls per run</span><span class="val" id="v-runlen">3</span></button>
+      <div class="row-body"><div class="opts" id="opts-runlen"></div></div>
+    </div>
+
+    <div class="row" data-row="grail" data-open="false">
+      <button class="row-head"><span>grail threshold</span><span class="val" id="v-grail">1.5×</span></button>
+      <div class="row-body">
+        <div class="opts" id="opts-grail"></div>
+        <span class="mini">A pull goes gold when it is wanted this many times more than it is owned.</span>
+        <input id="f-grail" type="number" min="1" max="20" step="0.1" value="1.5">
       </div>
     </div>
 
-    <label for="f-run-length">pulls per run</label>
-    <input id="f-run-length" type="number" min="1" max="6" value="3">
+    <div class="row" data-row="token" data-open="false">
+      <button class="row-head"><span>discogs token</span><span class="val" id="v-token">not set</span></button>
+      <div class="row-body">
+        <input id="token" type="password" placeholder="paste token…" autocomplete="off">
+        <span class="mini">A free token raises the limit from 25 to 60 Discogs requests a minute — roughly 6 chips to 14 — and unlocks Discogs cover art, which unauthenticated search does not return. discogs.com → Settings → Developers.</span>
+      </div>
+    </div>
+  </section>
 
-    <label for="f-grail">grail threshold (× want/have)</label>
-    <input id="f-grail" type="number" min="1" max="20" step="0.1" value="1.5">
-
-    <label for="token">discogs token</label>
-    <input id="token" type="password" placeholder="paste token…" autocomplete="off">
-
+  <section id="sec-log" hidden>
+    <h3>Log</h3>
+    <div class="sub">what this session has pulled</div>
     <div class="tabs">
       <button id="tab-history" class="active">History</button>
       <button id="tab-favs">Favorites</button>
     </div>
-    <div id="list"><div class="empty">No pulls yet.</div></div>
-  </div>
+    <div id="list"></div>
+    <div class="statline" id="session-stats"></div>
+    <div class="statline">
+      <span>tempo <b id="bpm-val">—</b> BPM <span id="bpm-hint">· tap R along with the beat</span></span>
+      <button class="opt" id="btn-tap-reset">reset</button>
+    </div>
+    <h4>shortcuts</h4>
+    <div class="keys" id="keys"></div>
+  </section>
 
   <div class="foot">
     <span>chips <b id="foot-chips">—</b></span>
@@ -555,6 +624,9 @@ let favs = JSON.parse(localStorage.getItem('digger_favs') || '[]');
 let activeTab = 'history';
 let player = null, playerReady = false;
 let deadVideos = new Set();      // videoIds that failed to embed this session — never re-served
+/* Grail odds are sampled from this session's own pulls rather than probed —
+   an honest running rate, not a guess. */
+let session = { pulls: 0, grails: 0 };
 let digging = false;
 
 /* ---------- settings ---------- */
@@ -569,7 +641,6 @@ $('token').addEventListener('change', e => {
   localStorage.setItem('digger_token', e.target.value.trim());
   updateFuel();
 });
-$('f-run-length').value = settings.runLength;
 $('f-grail').value = settings.grailThreshold;
 
 /* ---------- discogs api ---------- */
@@ -631,10 +702,15 @@ function updateFuel() {
 setInterval(updateFuel, 1000);
 
 /* ---------- filters ---------- */
+const GENRES = ['', 'Funk / Soul', 'Jazz', 'Electronic', 'Hip Hop', 'Rock', 'Latin', 'Reggae', 'Pop',
+  'Blues', 'Folk, World, & Country', 'Stage & Screen', 'Classical', 'Non-Music', 'Brass & Military', "Children's"];
+const FORMATS = [['Vinyl', 'vinyl only'], ['', 'any format']];
+const filters = { genre: '', format: 'Vinyl' };
+
 function filterParams(year) {
   const p = new URLSearchParams({ type: 'release', per_page: '25' });
-  const g = selValue('csel-genre'), s = $('f-style').value.trim(),
-        c = $('f-country').value.trim(), f = selValue('csel-format');
+  const g = filters.genre, s = $('f-style').value.trim(),
+        c = $('f-country').value.trim(), f = filters.format;
   if (g) p.set('genre', g);
   if (s) p.set('style', s);
   if (c) p.set('country', c);
@@ -670,16 +746,65 @@ function fmt(n) { return n == null ? '—' : n.toLocaleString('en-US'); }
 function renderTopBar() {
   const r = yearRange();
   $('t-years').textContent = r ? (r[0] === r[1] ? String(r[0]) : r[0] + '–' + r[1]) : 'any year';
-  const fv = selValue('csel-format');
-  $('t-format').textContent = fv ? fv.toLowerCase() : 'any format';
+  $('t-format').textContent = filters.format ? filters.format.toLowerCase() : 'any format';
   $('t-counts').innerHTML = fmt(tableCounts.total) + ' → <em>' + fmt(tableCounts.matching) + '</em>';
   $('foot-table').textContent = fmt(tableCounts.matching);
 }
-async function probeCount(params) {
+async function probeCount(params, harvest) {
   const p = new URLSearchParams(params);
-  p.set('per_page', '1');
+  // A page of 25 costs the same one request as a single row and carries 25
+  // cover URLs with it, so the count probe also stocks the cover bank.
+  p.set('per_page', harvest ? '25' : '1');
   const d = await api(API + '/database/search?' + p, { meta: true });
+  if (harvest) bankCovers(d.results);
   return (d.pagination && d.pagination.items) || 0;
+}
+
+/* ---------- cover bank ----------
+   The rolling flicker should show real sleeves, not gradients, and it should
+   do so on the first roll. Nothing here costs an extra request:
+
+     - Discogs search results carry a cover_image, so the count probe and every
+       pool refill stock the bank for free. That field is empty unless a token
+       is set, though — unauthenticated search returns no artwork at all.
+     - So the bank also takes the YouTube thumbnails that videoAlive() already
+       loads while vetting a release's videos. Those need no auth, and one pull
+       vets several videos, so the bank fills either way.
+     - It persists, so a returning session starts warm instead of grey.
+
+   Every URL is warmed into the browser cache as it arrives, so a 120ms frame
+   never lands on a half-loaded image. */
+const BANK_MAX = 48;
+let coverBank = JSON.parse(localStorage.getItem('casino_covers') || '[]');
+function saveBank() { try { localStorage.setItem('casino_covers', JSON.stringify(coverBank)); } catch (e) {} }
+function bankImage(u) {
+  if (!u || u.includes('spacer.gif') || coverBank.includes(u)) return false;
+  coverBank.push(u);
+  if (coverBank.length > BANK_MAX) coverBank = coverBank.slice(-BANK_MAX);
+  new Image().src = u;
+  return true;
+}
+function bankCovers(results) {
+  let added = false;
+  (results || []).forEach(r => { if (bankImage(r.cover_image)) added = true; });
+  if (added) saveBank();
+}
+/* A release usually links several videos and we only need one to play. Vetting
+   the rest costs no Discogs request — just a thumbnail load — and videoAlive()
+   banks the ones that come back live. Capped so a release with a long video
+   list doesn't turn into a download. */
+function prewarmVideos(vids, usedId) {
+  vids.filter(v => v.__id && v.__id !== usedId).slice(0, 4)
+      .forEach(v => { videoAlive(v.__id); });
+}
+
+function bankSample(n) {
+  const a = coverBank.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a.slice(0, n);
 }
 let countTimer = null;
 function refreshCounts() {
@@ -694,7 +819,7 @@ function refreshCounts() {
       if (tableCounts.total == null) {
         tableCounts.total = await probeCount(new URLSearchParams({ type: 'release' }));
       }
-      tableCounts.matching = await probeCount(p);
+      tableCounts.matching = await probeCount(p, true);
       localStorage.setItem('casino_counts', JSON.stringify(tableCounts));
     } catch (e) { /* a failed probe just leaves the last known number up */ }
     renderTopBar();
@@ -726,6 +851,7 @@ async function refillPool() {
     d = await api(API + '/database/search?' + params + '&page=' + page);
   }
   pool = d.results || [];
+  bankCovers(pool);
   poolKey = baseKey();
   return pool.length > 0;
 }
@@ -751,10 +877,17 @@ function ratioText(m) {
 function videoAlive(id) {
   return new Promise(resolve => {
     const img = new Image();
+    const src = 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg';
     const timer = setTimeout(() => resolve(true), 3000);
-    img.onload = () => { clearTimeout(timer); resolve(img.naturalWidth > 120); };
+    img.onload = () => {
+      clearTimeout(timer);
+      const live = img.naturalWidth > 120;
+      // The probe already paid for this image — keep it for the flicker.
+      if (live && bankImage(src)) saveBank();
+      resolve(live);
+    };
     img.onerror = () => { clearTimeout(timer); resolve(false); };
-    img.src = 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg';
+    img.src = src;
   });
 }
 
@@ -808,9 +941,11 @@ async function digOnce() {
       if (!vids.length) continue;   // nothing on YouTube at all — not worth a row
       // try the release's videos in random order, skipping ones YouTube has deleted
       vids.sort(() => Math.random() - .5);
+      vids.forEach(v => { v.__id = (v.uri.match(/(?:v=|youtu\.be\/)([\w-]{11})/) || [])[1]; });
       for (const v of vids) {
-        const id = (v.uri.match(/(?:v=|youtu\.be\/)([\w-]{11})/) || [])[1];
+        const id = v.__id;
         if (id && !deadVideos.has(id) && await videoAlive(id)) {
+          prewarmVideos(vids, id);
           return { ok: true, pull: pullFrom(rel, item, v, id) };
         }
       }
@@ -932,8 +1067,9 @@ function renderList() {
     return;
   }
   items.forEach(t => {
-    const el = document.createElement('div');
-    el.className = 'track' + (isGrail(t) ? ' g' : '');
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'track-row' + (isGrail(t) ? ' g' : '');
     const img = document.createElement('img');
     img.src = t.cover || (t.videoId ? 'https://i.ytimg.com/vi/' + t.videoId + '/default.jpg' : '');
     img.loading = 'lazy'; img.alt = '';
@@ -1112,14 +1248,16 @@ function startCyclers() {
 }
 function stopCyclers() { clearInterval(cycTimer); cycTimer = null; }
 
-/* The last six covers we have seen, newest first, so the flicker is made of
-   records this session actually pulled rather than stock imagery. */
+/* Six covers for the flicker: records this session actually pulled first,
+   topped up from the pre-loaded bank so even the very first roll of a cold
+   session flickers real sleeves. */
 function renderCycler() {
   const seen = [], out = [];
   [...run].reverse().concat(history).forEach(t => {
     const src = t.cover || (t.videoId ? 'https://i.ytimg.com/vi/' + t.videoId + '/hqdefault.jpg' : '');
     if (src && !seen.includes(src)) { seen.push(src); }
   });
+  bankSample(BANK_MAX).forEach(u => { if (seen.length < 6 && !seen.includes(u)) seen.push(u); });
   const box = $('cycler');
   box.innerHTML = '';
   for (let i = 0; i < 6; i++) {
@@ -1165,6 +1303,7 @@ function commitPull(res, back) {
   if (res.ok || res.reason === 'nopreview') {
     current = res.pull;
     run.push(current);
+    recordPull(current);
     if (res.ok) {
       setState(isGrail(current) ? 'grail' : 'reveal');
       play(current);
@@ -1199,6 +1338,44 @@ function commitPull(res, back) {
 }
 function escapeAttr(v) { return String(v).replace(/"/g, '&quot;'); }
 
+function recordPull(t) {
+  session.pulls++;
+  if (isGrail(t)) session.grails++;
+  renderSession();
+}
+function renderSession() {
+  const odds = session.pulls < 5 ? 'sampling…'
+    : session.grails ? '1 in ' + Math.round(session.pulls / session.grails)
+    : 'none in ' + session.pulls;
+  $('session-stats').innerHTML =
+    '<span><b>' + session.pulls + '</b> pull' + (session.pulls === 1 ? '' : 's') +
+    ' · <b>' + session.grails + '</b> grail' + (session.grails === 1 ? '' : 's') + '</span>' +
+    '<span>grail odds <b>' + odds + '</b></span>';
+}
+
+/* ---------- tap tempo ----------
+   The BPM box is gone with the old layout, but the mechanic isn't: R still
+   taps and the reading lives in the drawer's Log section. */
+let taps = [];
+function tap() {
+  const now = performance.now();
+  if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
+  taps.push(now);
+  if (taps.length < 2) { toast('Keep tapping…'); return; }
+  const iv = [];
+  for (let i = 1; i < taps.length; i++) iv.push(taps[i] - taps[i - 1]);
+  const recent = iv.slice(-8);
+  const bpm = Math.round(60000 / (recent.reduce((a, b) => a + b, 0) / recent.length));
+  $('bpm-val').textContent = bpm;
+  $('bpm-hint').textContent = '';
+  toast(bpm + ' BPM');
+}
+$('btn-tap-reset').onclick = () => {
+  taps = [];
+  $('bpm-val').textContent = '—';
+  $('bpm-hint').textContent = '· tap R along with the beat';
+};
+
 /* ---------- download ---------- */
 async function downloadAudio() {
   if (!current || !current.watchUrl || $('btn-download').classList.contains('busy')) return;
@@ -1231,6 +1408,14 @@ async function downloadAudio() {
   } finally {
     btn.classList.remove('busy');
   }
+}
+
+/* ---------- play / pause ----------
+   Space now rolls, and YouTube's own controls are the primary way to pause.
+   K is YouTube's own shortcut for it, so it is the least surprising remap. */
+function togglePlay() {
+  if (!playerReady || !current || !current.videoId) return;
+  if (player.getPlayerState() === 1) player.pauseVideo(); else player.playVideo();
 }
 
 /* ---------- drawer ---------- */
@@ -1269,16 +1454,22 @@ function switchTab(t) {
   $('tab-favs').classList.toggle('active', t === 'favs');
   renderList();
 }
-$('f-run-length').addEventListener('change', e => {
-  settings.runLength = Math.min(6, Math.max(1, parseInt(e.target.value) || 3));
-  e.target.value = settings.runLength;
-  saveSettings();
-});
 $('f-grail').addEventListener('change', e => {
   settings.grailThreshold = Math.min(20, Math.max(1, parseFloat(e.target.value) || 1.5));
   e.target.value = settings.grailThreshold;
   saveSettings();
+  reflowGrail();
 });
+$('token').addEventListener('input', () => { $('v-token').textContent = maskToken($('token').value.trim()); });
+
+/* A filter change re-reads the table and re-labels the drawer. The count
+   probe is debounced inside refreshCounts, so typing doesn't cost chips. */
+function onFiltersChanged() {
+  renderTopBar();
+  refreshCounts();
+}
+['f-style', 'f-country'].forEach(id =>
+  $(id).addEventListener('input', () => { renderDrawer(); onFiltersChanged(); }));
 
 /* ---------- custom dropdowns + style autocomplete ----------
    Styles are Discogs' real controlled vocabulary, grouped under the genre they
@@ -1303,54 +1494,142 @@ const GENRE_STYLES = {
 };
 const ANY_STYLES = [...new Set(Object.values(GENRE_STYLES).flat())].sort((a, b) => a.localeCompare(b));
 function styleOptionsForGenre() {
-  return GENRE_STYLES[selValue('csel-genre')] || ANY_STYLES;
+  return GENRE_STYLES[filters.genre] || ANY_STYLES;
 }
 
-function selValue(id) {
-  const sel = $(id).querySelector('.csel-opt.sel');
-  return sel ? sel.dataset.value : '';
+/* ---------- drawer ----------
+   Every row reads `label — value ›` and expands in place. One row open at a
+   time, so the drawer stays a list you can scan rather than a form. */
+function optButton(label, on, onPick) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'opt'; b.textContent = label;
+  b.setAttribute('aria-pressed', String(on));
+  b.onclick = onPick;
+  return b;
 }
-function closeSelects(except) {
-  document.querySelectorAll('.csel.open').forEach(c => { if (c !== except) c.classList.remove('open'); });
+function buildOptions(host, items, isOn, onPick) {
+  host.innerHTML = '';
+  items.forEach(([value, label]) =>
+    host.appendChild(optButton(label, isOn(value), () => { onPick(value); renderDrawer(); onFiltersChanged(); })));
 }
-function initSelect(id, onChange) {
-  const csel = $(id);
-  const trigger = csel.querySelector('.csel-trigger');
-  const label = csel.querySelector('.csel-label');
-  trigger.addEventListener('click', () => {
-    const willOpen = !csel.classList.contains('open');
-    closeSelects(csel);
-    $('cac-style-menu').classList.remove('open');
-    csel.classList.toggle('open', willOpen);
-  });
-  csel.querySelectorAll('.csel-opt').forEach(opt => {
-    opt.addEventListener('click', () => {
-      csel.querySelectorAll('.csel-opt').forEach(o => o.classList.remove('sel'));
-      opt.classList.add('sel');
-      label.textContent = opt.textContent;
-      csel.classList.remove('open');
-      if (onChange) onChange(opt.dataset.value);
-      onFiltersChanged();
-    });
-  });
+function maskToken(v) {
+  return v ? '\u2022'.repeat(Math.max(4, Math.min(8, v.length - 4))) + v.slice(-4) : 'not set';
 }
-initSelect('csel-genre', () => {
+function renderDrawer() {
+  buildOptions($('opts-genre'), GENRES.map(g => [g, g || 'any']),
+    v => v === filters.genre, v => { setGenre(v); });
+  buildOptions($('opts-format'), FORMATS, v => v === filters.format, v => { filters.format = v; });
+  buildOptions($('opts-runlen'), [1, 2, 3, 4, 5, 6].map(n => [String(n), String(n)]),
+    v => +v === settings.runLength, v => { settings.runLength = +v; saveSettings(); renderRun(); renderTransport(); });
+  buildOptions($('opts-grail'), ['1.2', '1.5', '2', '3', '5'].map(n => [n, n + '\u00d7']),
+    v => parseFloat(v) === settings.grailThreshold, v => { settings.grailThreshold = parseFloat(v); saveSettings(); $('f-grail').value = v; reflowGrail(); });
+
+  $('v-genre').textContent = filters.genre || 'any';
+  $('v-style').textContent = $('f-style').value.trim() || 'any';
+  $('v-country').textContent = $('f-country').value.trim() || 'any';
+  $('v-format').textContent = (FORMATS.find(f => f[0] === filters.format) || ['', 'any format'])[1];
+  $('v-runlen').textContent = settings.runLength;
+  $('v-grail').textContent = settings.grailThreshold + '\u00d7';
+  $('v-token').textContent = maskToken($('token').value.trim());
+  renderYears();
+}
+/* Changing the threshold re-decides every row already on the table. */
+function reflowGrail() {
+  if (current) document.body.dataset.state =
+    beat === 'nopreview' ? 'nopreview' : (isGrail(current) ? 'grail' : 'reveal');
+  if (current && beat !== 'nopreview') beat = document.body.dataset.state;
+  renderRun(); renderList(); renderDrawer();
+}
+function setGenre(v) {
+  filters.genre = v;
   // Styles are genre-specific — drop a leftover style that doesn't belong to
   // the newly picked genre, and hint the field with a relevant example.
   const style = $('f-style');
-  const valid = styleOptionsForGenre().some(s => s.toLowerCase() === style.value.trim().toLowerCase());
+  const valid = styleOptionsForGenre().some(x => x.toLowerCase() === style.value.trim().toLowerCase());
   if (style.value && !valid) style.value = '';
-  style.placeholder = selValue('csel-genre') ? 'e.g. ' + styleOptionsForGenre()[0] : 'Any';
+  style.placeholder = filters.genre ? 'e.g. ' + styleOptionsForGenre()[0] : 'Any';
   $('cac-style-menu').classList.remove('open');
-});
-initSelect('csel-format');
-
-function onFiltersChanged() {
-  renderTopBar();
-  refreshCounts();
 }
-['f-style', 'f-country', 'f-year-from', 'f-year-to'].forEach(id =>
-  $(id).addEventListener('input', onFiltersChanged));
+
+/* accordion */
+document.querySelectorAll('.row .row-head').forEach(head => {
+  head.onclick = () => {
+    const row = head.closest('.row');
+    const open = row.dataset.open === 'true';
+    document.querySelectorAll('.row').forEach(r => r.dataset.open = 'false');
+    row.dataset.open = String(!open);
+    if (!open) { const f = row.querySelector('input'); if (f) f.focus(); }
+  };
+});
+
+/* drawer sections */
+function showSection(name) {
+  const table = name === 'table';
+  $('sec-table').hidden = !table;
+  $('sec-log').hidden = table;
+  $('dtab-table').classList.toggle('active', table);
+  $('dtab-log').classList.toggle('active', !table);
+}
+$('dtab-table').onclick = () => showSection('table');
+$('dtab-log').onclick = () => showSection('log');
+
+/* ---------- year range: two handles on one track ---------- */
+const YR_MIN = 1900, YR_MAX = new Date().getFullYear() + 1;
+function yrVals() { return [parseInt($('f-year-from').value), parseInt($('f-year-to').value)]; }
+function yrPct(v) { return (v - YR_MIN) / (YR_MAX - YR_MIN) * 100; }
+function renderYears() {
+  const [a, b] = yrVals();
+  $('v-years').textContent = a === b ? String(a) : a + ' \u2013 ' + b;
+  $('yr-a').style.left = yrPct(a) + '%';
+  $('yr-b').style.left = yrPct(b) + '%';
+  $('yr-fill').style.left = yrPct(a) + '%';
+  $('yr-fill').style.right = (100 - yrPct(b)) + '%';
+  [['yr-a', a], ['yr-b', b]].forEach(([id, v]) => {
+    const h = $(id);
+    h.setAttribute('aria-valuemin', YR_MIN); h.setAttribute('aria-valuemax', YR_MAX);
+    h.setAttribute('aria-valuenow', v); h.setAttribute('aria-valuetext', String(v));
+  });
+}
+function setYear(which, v) {
+  v = Math.max(YR_MIN, Math.min(YR_MAX, Math.round(v)));
+  const [a, b] = yrVals();
+  if (which === 'a') $('f-year-from').value = Math.min(v, b);
+  else $('f-year-to').value = Math.max(v, a);
+  renderYears();
+  onFiltersChanged();
+}
+(function initYearRange() {
+  const track = $('yr-track');
+  const valueAt = clientX => {
+    const r = track.getBoundingClientRect();
+    return YR_MIN + (YR_MAX - YR_MIN) * Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+  };
+  ['a', 'b'].forEach(which => {
+    const h = $('yr-' + which);
+    h.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      h.setPointerCapture(e.pointerId);
+      const move = ev => setYear(which, valueAt(ev.clientX));
+      const up = () => { h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); };
+      h.addEventListener('pointermove', move);
+      h.addEventListener('pointerup', up);
+    });
+    h.addEventListener('keydown', e => {
+      const step = e.shiftKey ? 10 : 1;
+      const now = parseInt(h.getAttribute('aria-valuenow'));
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); setYear(which, now - step); }
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); setYear(which, now + step); }
+      else if (e.key === 'Home') { e.preventDefault(); setYear(which, YR_MIN); }
+      else if (e.key === 'End') { e.preventDefault(); setYear(which, YR_MAX); }
+    });
+  });
+  // clicking the track moves whichever handle is nearer
+  track.addEventListener('pointerdown', e => {
+    if (e.target.classList.contains('h')) return;
+    const v = valueAt(e.clientX), [a, b] = yrVals();
+    setYear(Math.abs(v - a) <= Math.abs(v - b) ? 'a' : 'b', v);
+  });
+})();
 
 (function initStyleAutocomplete() {
   const input = $('f-style'), menu = $('cac-style-menu');
@@ -1360,9 +1639,8 @@ function onFiltersChanged() {
     opts.forEach((o, idx) => o.classList.toggle('hi', idx === i));
     if (opts[i]) opts[i].scrollIntoView({ block: 'nearest' });
   }
-  function pick(val) { input.value = val; menu.classList.remove('open'); onFiltersChanged(); }
+  function pick(val) { input.value = val; menu.classList.remove('open'); renderDrawer(); onFiltersChanged(); }
   function open() {
-    closeSelects(null);
     const q = input.value.trim().toLowerCase();
     const pool = styleOptionsForGenre();
     let matches = q ? pool.filter(s => s.toLowerCase().includes(q)) : pool.slice();
@@ -1403,26 +1681,54 @@ function onFiltersChanged() {
 
 /* click outside closes any open dropdown/autocomplete */
 document.addEventListener('click', e => {
-  if (!e.target.closest('.csel')) closeSelects(null);
   if (!e.target.closest('.cac')) $('cac-style-menu').classList.remove('open');
 });
 
-/* ---------- keyboard ---------- */
+/* ---------- keyboard ----------
+   One table, so the drawer's list and the handler can't drift apart. */
+const SHORTCUTS = [
+  ['space', 'roll — or start a new run', () => roll()],
+  ['k', 'play / pause', togglePlay],
+  ['f', 'favorite this pull', toggleFav],
+  ['y', 'download the mp3', () => downloadAudio()],
+  ['c', 'copy the youtube link', copyLink],
+  ['r', 'tap tempo', tap],
+  ['s', 'open / close settings', () => setDrawer(!document.body.classList.contains('settings'))],
+  ['esc', 'close settings', () => setDrawer(false)]
+];
+function copyLink() {
+  if (!current || !current.watchUrl) return;
+  navigator.clipboard.writeText(current.watchUrl).then(
+    () => toast('YouTube link copied'),
+    () => toast('Could not copy the link'));
+}
+function renderKeys() {
+  $('keys').innerHTML = '';
+  SHORTCUTS.forEach(([key, what]) => {
+    const kbd = document.createElement('kbd'); kbd.textContent = key;
+    const span = document.createElement('span'); span.textContent = what;
+    $('keys').append(kbd, span);
+  });
+}
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { setDrawer(false); return; }
-  if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.closest('.csel')) return;
-  const k = e.key.toLowerCase();
-  if (k === ' ') { e.preventDefault(); roll(); }
-  else if (k === 'f') toggleFav();
-  else if (k === 'y') downloadAudio();
-  else if (k === 's') setDrawer(!document.body.classList.contains('settings'));
+  if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.isContentEditable) return;
+  const k = e.key === ' ' ? 'space' : e.key.toLowerCase();
+  const hit = SHORTCUTS.find(sc => sc[0] === k);
+  if (!hit) return;
+  e.preventDefault();
+  hit[2]();
 });
 
 /* ---------- boot ---------- */
 updateFuel();
+coverBank.slice(-12).forEach(u => { new Image().src = u; });   // warm last session's covers
+renderDrawer();
 renderTopBar();
 refreshCounts();
 renderList();
+renderSession();
+renderKeys();
 renderRun();
 setState('idle');
 </script>
