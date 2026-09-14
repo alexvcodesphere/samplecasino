@@ -470,7 +470,7 @@ body.settings .drawer { transform: translateX(0); }
   <div class="filt">
     <span id="t-years">1965–1985</span>
     <span id="t-format">vinyl</span>
-    <span id="t-counts" title="Every release Discogs holds → releases matching the current filters">—</span>
+    <span id="t-counts" title="Everything Discogs holds → samples the current filters can land on">—</span>
     <span class="chips" id="chip-row"></span>
     <button class="gear" id="btn-settings">settings</button>
   </div>
@@ -638,7 +638,7 @@ body.settings .drawer { transform: translateX(0); }
     <div class="foot">
       <span>chips <b id="foot-chips">—</b></span>
       <span id="foot-refill">refill <b>—</b></span>
-      <span>table <b id="foot-table">—</b></span>
+      <span>total samples <b id="foot-table">—</b></span>
     </div>
   </div>
 </aside>
@@ -1675,22 +1675,37 @@ function renderDrawer() {
 
 /* The Apply bar is the only place the draft becomes real. It also says what
    applying would land on, so the choice is made before the request, not after. */
+/* Below this the roll starts repeating itself. Discogs pages 25 at a time and
+   most releases carry no playable video, so a few dozen matches is a few dozen
+   chances to land on the same handful of records. */
+const MIN_TABLE = 150;
+function thinTable(n) { return n != null && n > 0 && n < MIN_TABLE; }
+
+function applyNote(n, pending, countMoved) {
+  if (n === 0) {
+    return pending ? 'nothing matches — loosen a filter before applying'
+                   : 'nothing matches these filters — the roll has nothing to land on';
+  }
+  if (thinTable(n)) {
+    return 'only ' + fmt(n) + ' samples — ' +
+      (pending ? 'loosen a filter before applying' : 'the roll will repeat itself');
+  }
+  if (!pending) return 'these are the filters the roll uses';
+  return countMoved && n != null
+    ? 'apply to roll on ' + fmt(n) + ' samples'
+    : 'unapplied changes — apply to use them';
+}
+
 function renderApply() {
   const pending = !sameFilters(draft, filters);
+  // draft and filters agree when nothing is pending, so one count serves both.
   const n = countOf(draft);
   const countMoved = countKeyFor(draft) !== countKeyFor(filters);
+  const short = n === 0 || thinTable(n);
   $('btn-apply').disabled = !pending;
-  $('apply-note').classList.toggle('pending', pending);
-  $('apply-note').textContent = !pending
-    ? (countOf(filters) === 0
-        ? 'nothing matches these filters — the roll has nothing to land on'
-        : 'these are the filters the roll uses')
-    : n === 0
-      ? 'nothing matches — loosen a filter before applying'
-      : (countMoved && n != null)
-        ? 'apply to roll on ' + fmt(n) + ' releases'
-        : 'unapplied changes — apply to use them';
-  $('apply-note').classList.toggle('warn', n === 0 || (!pending && countOf(filters) === 0));
+  $('apply-note').textContent = applyNote(n, pending, countMoved);
+  $('apply-note').classList.toggle('pending', pending && !short);
+  $('apply-note').classList.toggle('warn', short);
   $('btn-settings').classList.toggle('pending', pending);
 }
 function applyFilters() {
@@ -1702,7 +1717,7 @@ function applyFilters() {
   renderTopBar();
   renderDrawer();
   refreshCounts(filters);
-  toast('Table updated — ' + rangeLabel(filters) + ' · ' + (filters.genre || 'any genre'));
+  toast('Filters applied — ' + rangeLabel(filters) + ' · ' + (filters.genre || 'any genre'));
 }
 $('btn-apply').onclick = applyFilters;
 /* Changing the threshold re-decides every pull already on the table. */
