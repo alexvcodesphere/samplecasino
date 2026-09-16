@@ -178,6 +178,28 @@ body[data-grail="1"]       .off-grail { display: none !important; }
   font-family: var(--mono); font-size: 1.3vh; font-weight: 400; opacity: .55;
   transition: opacity .15s;
 }
+/* Hovering rolls the label out through the bottom while an identical copy drops
+   in from the top — one slot-machine pass per hover. It is an animation and not
+   a pair of hover transforms on purpose: a transform would rewind the moment the
+   pointer left, and this has to always travel forward.
+
+   The trick that makes that possible is the two-copy stack. The pass runs from
+   -50% (the second copy showing) to 0 (the first copy showing), so it *ends* on
+   transform:none — the resting state — and there is nothing to snap back from.
+   Both copies read the same, so the jump to -50% at the start is invisible.
+
+   The line box is the travel distance, so it stays near the cap height: loose
+   leading turns into dead space and the label vanishes for a beat mid-roll.
+   ROLL is all caps with no descenders, so 1.1 clips nothing. */
+.rolltext { display: inline-block; overflow: hidden; height: 1.1em; }
+.rolltext-in { display: block; }
+.rolltext-in > span { display: block; line-height: 1.1; }
+.rolltext-in.rolling { animation: rolltext .5s cubic-bezier(.22, 1, .36, 1); }
+@keyframes rolltext {
+  from { transform: translateY(-50%); }
+  to   { transform: translateY(0); }
+}
+
 /* The old hover nudged the fill two shades lighter, which on a pill this size
    was invisible. It's the primary control on the page, so it now answers with
    a halo of its own colour — opacity does the work, not a second hue — and
@@ -217,6 +239,9 @@ body[data-chips="empty"] .roll small { opacity: 1; }
 .ico:hover { color: var(--fg); border-color: var(--fg); }
 .ico.on { color: var(--acid); border-color: var(--acid); background: rgba(201,242,74,.1); }
 .ico.busy { opacity: .45; pointer-events: none; }
+/* display:grid above outranks the UA's [hidden] rule, so the download button
+   would still be drawn on a server that has the endpoint switched off. */
+.ico[hidden] { display: none; }
 
 /* ============================================================
    head
@@ -539,7 +564,10 @@ body.settings .drawer { transform: translateX(0); }
 
 <!-- ========== transport ========== -->
 <div class="tr">
-  <button class="roll" id="btn-roll">ROLL <small id="roll-sub">one pull</small></button>
+  <button class="roll" id="btn-roll">
+    <span class="rolltext"><span class="rolltext-in"><span>ROLL</span><span aria-hidden="true">ROLL</span></span></span>
+    <small id="roll-sub">one pull</small>
+  </button>
   <button class="ico" id="btn-fav" title="Favorite" aria-label="Favorite">
     <svg class="gl" viewBox="0 0 24 24" aria-hidden="true">
       <path d="M20.8 5.6a5.1 5.1 0 0 0-7.2 0L12 7.2l-1.6-1.6a5.1 5.1 0 0 0-7.2 7.2L12 20.6l8.8-8.8a5.1 5.1 0 0 0 0-6.2z"/>
@@ -1681,6 +1709,17 @@ function toast(msg) {
    that never reaches the player (no preview, a timeout) would leave ROLL armed
    and the next space would roll again. Dropping focus ends that. */
 $('btn-roll').onclick = () => { $('btn-roll').blur(); roll(); };
+/* The class drives the pass, so it survives the pointer leaving mid-roll; a
+   hover arriving while one is still running is ignored rather than restarting
+   it, which would stutter. A dead ROLL has pointer-events:none and so never
+   fires this at all. */
+(() => {
+  const label = document.querySelector('.rolltext-in');
+  const start = () => label.classList.add('rolling');
+  $('btn-roll').addEventListener('mouseenter', start);
+  $('btn-roll').addEventListener('focus', start);
+  label.addEventListener('animationend', () => label.classList.remove('rolling'));
+})();
 $('btn-fav').onclick = () => toggleFav();
 $('tab-history').onclick = () => setLogTab('history');
 $('tab-favs').onclick = () => setLogTab('favs');
