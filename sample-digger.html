@@ -83,9 +83,6 @@ body[data-grail="1"]       .off-grail { display: none !important; }
 .top .filt em { font-style: normal; color: var(--fg); }
 .top .filt .dim { color: var(--fg3); }
 
-.chips { display: flex; align-items: center; gap: .5vh; }
-.chips i { width: .9vh; height: .9vh; border-radius: 50%; background: var(--acid); display: block; }
-.chips i.o { background: rgba(201,242,74,.2); }
 
 .gear {
   height: 4vh; padding: 0 1.2vw; border-radius: 2vh;
@@ -213,14 +210,12 @@ body[data-grail="1"]       .off-grail { display: none !important; }
 .roll:hover small,
 .roll:focus-visible small { opacity: .9; }
 .roll:active { transform: translateY(1px) scale(.995); }
-body[data-state="rolling"] .roll,
-body[data-chips="empty"] .roll {
+body[data-state="rolling"] .roll {
   background-color: rgba(236,233,226,.15); color: var(--fg3); pointer-events: none;
-  /* pointer-events stops hover, but focus survives — a button that was focused
-     when the chips ran out must not keep glowing as though it still works. */
+  /* pointer-events stops hover, but focus survives — a button mid-roll must not
+     keep glowing as though it were ready. */
   box-shadow: none; transform: none;
 }
-body[data-chips="empty"] .roll small { opacity: 1; }
 .ico {
   width: 6.4vh; height: 6.4vh; flex: 0 0 auto; border-radius: 50%;
   border: 1px solid rgba(236,233,226,.25); background: transparent;
@@ -402,7 +397,6 @@ body.settings .drawer { transform: translateX(0); }
   .tr-act { width: 26px; height: 26px; font-size: 15px; }
   .pager { gap: 16px; padding-top: 10px; }
   .cam { display: none; }
-  .chips i { width: 8px; height: 8px; }
   .gear { height: 34px; font-size: 12px; padding: 0 14px; gap: 6px; }
   .drawer { width: min(92vw, 420px); font-size: 13px; padding: 0; }
   .drawer-scroll { padding: 24px 20px 16px; }
@@ -530,7 +524,7 @@ body.settings .drawer { transform: translateX(0); }
 .statline b { color: var(--fg); font-weight: 400; }
 </style>
 </head>
-<body data-state="idle" data-chips="ok" data-grail="0">
+<body data-state="idle" data-grail="0">
 
 <!-- ========== top bar: reports the table, edits nothing ========== -->
 <div class="top">
@@ -541,7 +535,6 @@ body.settings .drawer { transform: translateX(0); }
     <span id="t-years">1965–1985</span>
     <span id="t-format">vinyl</span>
     <span id="t-counts" title="Everything Discogs holds → samples the current filters can land on">—</span>
-    <span class="chips" id="chip-row"></span>
     <button class="gear" id="btn-settings">settings</button>
   </div>
 </div>
@@ -705,8 +698,6 @@ body.settings .drawer { transform: translateX(0); }
       <button class="apply" id="btn-apply" disabled>apply</button>
     </div>
     <div class="foot">
-      <span>chips <b id="foot-chips">—</b></span>
-      <span id="foot-refill">refill <b>—</b></span>
       <span>total samples <b id="foot-table">—</b></span>
     </div>
   </div>
@@ -785,7 +776,6 @@ function apiUrl(url) {
 /* meta:true — counts against the rate limit but not against the observed
    per-pull request cost, so the table-count probes don't distort the chip math. */
 async function api(url, opts) {
-  updateFuel();
   let res;
   try {
     res = await fetch(apiUrl(url), { headers: apiHeaders() });
@@ -809,70 +799,11 @@ async function api(url, opts) {
    proxy — on a direct call the header isn't CORS-exposed. Worth having because
    the server's token is shared: this browser's own request log cannot see what
    other viewers have spent. */
-/* ---------- chips ----------
-   A stake, not a rate limit. Finding a record is a local query now, so there
-   is nothing left to meter: what used to be a live estimate of Discogs' rolling
-   window — measured cost per pull, the server's own header, a block timer — is
-   ten spins and a cooldown.
-
-   The one Discogs call a pull still makes, for the have/want the dump does not
-   carry, is best effort. Refused or rate-limited, the record still plays; it
-   just arrives without a ratio to judge it by. Nothing about the spin count
-   depends on it. */
-const SPINS = 10;                  // a full table
-const RECHARGE_MS = 1500;          // one spin back per tick — empty to full in 15s
-let spins = SPINS;
-let charged = Date.now();          // when the current partial spin started earning
-
-function fuelInfo() {
-  const now = Date.now();
-  if (spins >= SPINS) {
-    // Full: keep the clock level with now, or an idle minute would bank a
-    // minute's worth of spins the moment one is spent.
-    charged = now;
-  } else {
-    const gained = Math.floor((now - charged) / RECHARGE_MS);
-    if (gained > 0) {
-      spins = Math.min(SPINS, spins + gained);
-      charged += gained * RECHARGE_MS;
-    }
-  }
-  return { rolls: spins, max: SPINS };
-}
-function spendSpin() {
-  fuelInfo();                      // settle any earned spins before taking one
-  spins = Math.max(0, spins - 1);
-  updateFuel();
-}
-/* Two different questions, so two answers. The footer counts down to a full
-   table; ROLL, which you are staring at when there is nothing to spend, counts
-   down to the next single spin. */
-function refillIn() {
-  if (spins >= SPINS) return null;
-  const perSpin = charged + RECHARGE_MS - Date.now();
-  return Math.max(1, Math.ceil((perSpin + (SPINS - spins - 1) * RECHARGE_MS) / 1000));
-}
-function nextSpinIn() {
-  if (spins >= SPINS) return null;
-  return Math.max(1, Math.ceil((charged + RECHARGE_MS - Date.now()) / 1000));
-}
-function clock(secs) { return Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0'); }
-function updateFuel() {
-  const f = fuelInfo();
-  const row = $('chip-row');
-  if (row.children.length !== SPINS) {
-    row.innerHTML = '';
-    for (let i = 0; i < SPINS; i++) row.appendChild(document.createElement('i'));
-  }
-  [...row.children].forEach((el, i) => el.classList.toggle('o', i >= f.rolls));
-  const secs = refillIn();
-  $('foot-chips').textContent = f.rolls + ' / ' + SPINS;
-  $('foot-refill').innerHTML = 'refill <b>' + (secs === null ? 'full' : clock(secs)) + '</b>';
-  document.body.dataset.chips = f.rolls > 0 ? 'ok' : 'empty';
-  renderTransport();
-  return f;
-}
-setInterval(updateFuel, 1000);
+/* Rolling is unmetered. There was a stake here — chips derived from Discogs'
+   rate limit, later a fixed ten spins on a trickle — and with the index
+   answering pulls locally there is nothing left for it to protect. The one
+   Discogs call a pull still makes, for have/want, is best effort: refused, the
+   record plays without a ratio. */
 
 /* ---------- filters ---------- */
 const GENRES = ['', 'Funk / Soul', 'Jazz', 'Electronic', 'Hip Hop', 'Rock', 'Latin', 'Reggae', 'Pop',
@@ -1562,12 +1493,7 @@ function renderHead(t) {
 /* The transport's sub-label is the one place the next action is spelled out,
    so it is derived from state rather than written at each call site. */
 function renderTransport() {
-  const f = fuelInfo();
-  if (f.rolls <= 0) {
-    $('roll-sub').textContent = 'next spin ' + (nextSpinIn() || 1) + 's';
-  } else {
-    $('roll-sub').textContent = 'pull ' + (session.pulls + 1);
-  }
+  $('roll-sub').textContent = 'pull ' + (session.pulls + 1);
   const playable = !!(current && current.videoId);
   [$('btn-fav'), $('btn-copy'), $('btn-download')].forEach(b => {
     b.disabled = !playable;
@@ -1581,16 +1507,15 @@ function renderTransport() {
    <body data-state> and every visual difference is a CSS rule on that
    attribute, never a scattered boolean.
 
-   nochips is the one state that does NOT replace the beat: §4.6 says
-   "everything else stays as it was", so making it a beat would blank a
-   reveal that is still playing. It rides on <body data-chips> instead and
-   only touches ROLL and the chip dots. currentState() reports the pair as
-   one value for anything that needs to ask. */
+   There used to be a second axis here — a spent balance riding on
+   <body data-chips>, so that running out could grey ROLL without blanking a
+   reveal still playing. Rolling is unmetered now, so the beat is the whole
+   story. */
 let beat = 'idle';
 let rollGen = 0;
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 
-function currentState() { return fuelInfo().rolls <= 0 ? 'nochips' : beat; }
+function currentState() { return beat; }
 
 function setState(s) {
   beat = s;
@@ -1652,7 +1577,6 @@ function renderCycler() {
 /* ---------- a roll ---------- */
 async function roll() {
   if (beat === 'rolling') return;
-  if (currentState() === 'nochips') { toast('Out of spins — next one in ' + (nextSpinIn() || 1) + 's.'); return; }
 
   const gen = ++rollGen;
   const back = beat;
@@ -1676,7 +1600,6 @@ async function roll() {
 function commitPull(res, back) {
   if (res.ok || res.reason === 'nopreview') {
     current = res.pull;
-    spendSpin();
     recordPull(current);
     if (res.ok) {
       setState(isGrail(current) ? 'grail' : 'reveal');
@@ -1982,8 +1905,7 @@ function applyAll() {
     token = draftToken;
     try { localStorage.setItem('digger_token', token); } catch (e) {}
     // A personal token moves the rate limit, and the chips are drawn from it.
-    updateFuel();
-  }
+    }
   renderDrawer();
   refreshCounts(filters);
   toast(filtersChanged
@@ -2182,8 +2104,7 @@ fetch('/config')
     // yt-dlp downloads are opt-in server-side (ENABLE_DOWNLOAD), so the button
     // only exists where the endpoint behind it does.
     $('btn-download').hidden = !cfg.downloads;
-    updateFuel();
-    renderDrawer();
+      renderDrawer();
     refreshCounts();
   });
 renderLog();
