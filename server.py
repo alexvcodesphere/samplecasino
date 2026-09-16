@@ -5,10 +5,11 @@ Server for Sample Casino.
 Serves the static files and the single-page app on the root route, plus one
 extra endpoint the app's Download button calls:
 
-    GET /download?url=<youtube watch url>&title=<artist - title>
+    GET /download?url=<youtube watch url>&title=<artist - title>   (opt-in)
 
 which shells out to yt-dlp to grab the audio as an MP3 and streams it back to
-the browser as a file download.
+the browser as a file download. That endpoint is off by default; set
+ENABLE_DOWNLOAD=1 to turn it on, which also makes the button appear in the UI.
 
 Runs locally (double-click "Start Sample Digger.command") and on Codesphere.
 The port comes from $PORT (Codesphere sets 3000); it defaults to 8765 locally.
@@ -44,6 +45,13 @@ YOUTUBE_RE = re.compile(r'^https://(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[\
 # loads it — and a Discogs personal token reaches that account's collection,
 # wantlist and marketplace. Instead the browser calls /discogs and the server
 # attaches the credential, so it never leaves this process.
+# The MP3 download shells out to yt-dlp, which is fine on your own machine and
+# not something a public deployment should offer to everyone who opens the page.
+# It is therefore off unless ENABLE_DOWNLOAD is explicitly turned on, and the
+# gate is here rather than only in the UI — hiding the button would still leave
+# /download reachable by anyone who guessed the URL.
+ENABLE_DOWNLOAD = os.environ.get('ENABLE_DOWNLOAD', '').strip().lower() in ('1', 'true', 'yes', 'on')
+
 DISCOGS_API = 'https://api.discogs.com'
 DISCOGS_TOKEN = os.environ.get('DISCOGS_TOKEN', '').strip()
 # Only the two endpoints the app actually uses, so this can't be turned into an
@@ -113,7 +121,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_json(200, {'status': 'ok'})
         elif parsed.path == '/config':
             # Whether a token exists, never the token itself.
-            self.send_json(200, {'serverToken': bool(DISCOGS_TOKEN)})
+            self.send_json(200, {'serverToken': bool(DISCOGS_TOKEN),
+                                 'downloads': ENABLE_DOWNLOAD})
         elif parsed.path == '/discogs' or parsed.path.startswith('/discogs/'):
             self.handle_discogs(parsed)
         elif parsed.path == '/download':
@@ -173,6 +182,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def handle_download(self, parsed):
+        if not ENABLE_DOWNLOAD:
+            self.send_json(404, {'error': 'Downloads are disabled on this server.'})
+            return
         qs = urllib.parse.parse_qs(parsed.query)
         url = (qs.get('url') or [''])[0]
         title = (qs.get('title') or ['track'])[0]

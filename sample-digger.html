@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sample Casino — run log</title>
+<title>Sample Casino</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -205,6 +205,15 @@ body[data-chips="empty"] .roll small { opacity: 1; }
   color: var(--fg2); font-size: 2.1vh; display: grid; place-items: center;
   transition: color .15s, border-color .15s, background .15s;
 }
+/* A stroked icon paints in currentColor, so hover, disabled and .on need no
+   rules of their own — they already move the button's colour. */
+.ico .gl {
+  width: 2.8vh; height: 2.8vh; display: block;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* favoriting fills the heart; the acid colour comes from .ico.on above */
+.ico.on .gl { fill: currentColor; }
 .ico:hover { color: var(--fg); border-color: var(--fg); }
 .ico.on { color: var(--acid); border-color: var(--acid); background: rgba(201,242,74,.1); }
 .ico.busy { opacity: .45; pointer-events: none; }
@@ -212,18 +221,28 @@ body[data-chips="empty"] .roll small { opacity: 1; }
 /* ============================================================
    head
    ============================================================ */
-.head { position: absolute; left: 53vw; right: 3.2vw; top: 13vh; }
+/* The head shares the right column with the log, which starts at 37vh — so it
+   has 24vh, and a release that spells out five movements has to be cut to fit
+   rather than run straight through the list below. Two title lines at 4.6vh
+   plus one meta and one ratio line comes to 18.1vh worst case; max-height is
+   the backstop for whatever the clamps miss, set clear of that. */
+.head { position: absolute; left: 53vw; right: 3.2vw; top: 13vh; max-height: 20vh; overflow: hidden; }
 .head .ttl {
   font-weight: 900; font-size: 4.6vh; line-height: 1; letter-spacing: -.045em; margin: 0;
   overflow-wrap: anywhere;
 }
+#h-title, #h-meta {
+  display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
+}
+#h-title { -webkit-line-clamp: 2; }
+#h-meta  { -webkit-line-clamp: 1; }
 .head .ttl .art {
   display: block; font-family: var(--mono); font-weight: 400; font-size: 1.6vh;
   color: var(--fg2); letter-spacing: 0; margin-bottom: 1vh;
 }
 body[data-grail="1"] .head .ttl { color: var(--gold); }
 body[data-state="rolling"] .head .ttl { color: var(--fg3); }
-.head .m { font-family: var(--mono); font-size: 1.6vh; color: var(--fg2); margin-top: 1.2vh; line-height: 1.6; }
+.head .m { font-family: var(--mono); font-size: 1.6vh; color: var(--fg2); margin-top: 1.2vh; line-height: 1.6; overflow-wrap: anywhere; }
 .pill {
   display: inline-block; font-family: var(--mono); font-size: 1.5vh;
   padding: .5vh 1.1vh; border-radius: 3px; background: rgba(236,233,226,.08); color: var(--fg2);
@@ -231,33 +250,32 @@ body[data-state="rolling"] .head .ttl { color: var(--fg3); }
 .pill.g { background: var(--gold); color: #241703; font-weight: 700; }
 
 /* ============================================================
-   run table
+   log — history and favorites, one page at a time
    ============================================================ */
-.runs {
+.logs {
   position: absolute; left: 53vw; right: 3.2vw; top: 37vh;
-  max-height: 45vh; overflow: hidden auto;
+  max-height: 45vh; display: flex; flex-direction: column;
   font-family: var(--mono); font-size: 1.6vh;
 }
-.runs .lab { color: var(--fg3); display: flex; justify-content: space-between; margin-bottom: 1vh; }
-.runs table { width: 100%; border-collapse: collapse; }
-.runs td { padding: 1.15vh 0; border-top: 1px solid var(--line); color: var(--fg2); vertical-align: middle; }
-.runs tr:last-child td { border-bottom: 1px solid var(--line); }
-.runs td.n { width: 3vw; color: var(--fg3); }
-.runs td.th { width: 5vh; }
-.runs td.th img, .runs td.th div {
-  width: 3.6vh; height: 3.6vh; border-radius: 2px; object-fit: cover;
-  background: rgba(236,233,226,.07); display: block;
+.logs .tabs { display: flex; align-items: center; gap: 1.6vw; margin-bottom: 1vh; flex: 0 0 auto; }
+.tab {
+  background: none; border: 0; border-bottom: 1px solid transparent;
+  padding: 0 0 .6vh; font: inherit; color: var(--fg3);
 }
-.runs td.t { color: var(--fg); overflow-wrap: anywhere; }
-.runs td.t small { display: block; color: var(--fg3); font-size: 1.45vh; margin-top: .2vh; }
-.runs td.r { text-align: right; width: 8vw; white-space: nowrap; }
-.runs tr.cur td { background: rgba(201,242,74,.07); }
-.runs tr.cur td.n { color: var(--acid); }
-.runs tr.g td.r, .runs tr.g td.n { color: var(--gold); }
-.runs tr.next td { color: var(--fg3); font-style: italic; }
-body[data-state="rolling"] .runs tr.cur td.t,
-body[data-state="rolling"] .runs tr.cur td.n,
-body[data-state="rolling"] .runs tr.cur td.r { color: var(--fg3); }
+.tab:hover { color: var(--fg2); }
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--acid); }
+.tab i { font-style: normal; margin-left: .4vw; color: var(--fg3); }
+.logs .clr { margin-left: auto; background: none; border: 0; padding: 0; font: inherit; color: var(--fg3); }
+.logs .clr:hover:not(:disabled) { color: var(--fg); }
+.logs .clr:disabled { opacity: .35; cursor: default; }
+/* the list scrolls only if a row overflows its slot; the pager stays put */
+#log-list { flex: 1; min-height: 0; overflow: hidden auto; }
+#log-list .track-row:last-child { border-bottom: 1px solid var(--line); }
+.pager { flex: 0 0 auto; display: flex; align-items: center; gap: 1.4vw; padding-top: 1.2vh; color: var(--fg3); }
+.pager button { background: none; border: 0; padding: 0; font: inherit; color: var(--fg2); }
+.pager button:hover:not(:disabled) { color: var(--fg); }
+.pager button:disabled { opacity: .3; cursor: default; }
+.pager .of { margin-left: auto; }
 
 /* ============================================================
    reserved zone — the webcam sits here in OBS. Keep it empty.
@@ -330,7 +348,7 @@ body.settings .drawer { transform: translateX(0); }
    ============================================================ */
 @media (max-width: 1100px) {
   body { height: auto; overflow: auto; }
-  .top, .yt, .tr, .head, .runs {
+  .top, .yt, .tr, .head, .logs {
     position: static; width: auto; left: auto; right: auto; top: auto;
     margin: 0 20px 20px;
   }
@@ -344,19 +362,26 @@ body.settings .drawer { transform: translateX(0); }
   .roll { height: 54px; font-size: 17px; }
   .roll small { font-size: 11px; }
   .ico { width: 54px; height: 54px; font-size: 18px; }
+  .ico .gl { width: 22px; height: 22px; }
+  .head { max-height: none; overflow: visible; }
   .head .ttl { font-size: 34px; }
-  .head .ttl .art, .head .m, .runs { font-size: 13px; }
-  .runs { max-height: none; overflow: visible; padding-bottom: 40px; }
-  .runs td.n { width: 34px; } .runs td.th { width: 46px; }
-  .runs td.th img, .runs td.th div { width: 34px; height: 34px; }
-  .runs td.r { width: 64px; }
+  .head .ttl .art, .head .m, .logs { font-size: 13px; }
+  /* the stacked layout has the page's own scrollbar, so the log stops
+     capping its height and hands the rows back to the document flow */
+  .logs { display: block; max-height: none; padding-bottom: 40px; }
+  #log-list { overflow: visible; }
+  .logs .tabs { gap: 18px; margin-bottom: 8px; }
+  .track-row { gap: 10px; padding: 8px 0; }
+  .tr-thumb img { width: 34px; height: 34px; }
+  .track-row .a { font-size: 11px; }
+  .tr-act { width: 26px; height: 26px; font-size: 15px; }
+  .pager { gap: 16px; padding-top: 10px; }
   .cam { display: none; }
   .chips i { width: 8px; height: 8px; }
   .gear { height: 34px; font-size: 12px; padding: 0 14px; gap: 6px; }
   .drawer { width: min(92vw, 420px); font-size: 13px; padding: 0; }
   .drawer-scroll { padding: 24px 20px 16px; }
   .drawer-foot { padding: 12px 20px 20px; }
-  #list-history, #list-favs { max-height: 240px; }
   .drawer h3 { font-size: 22px; }
   .drawer .x { width: 32px; height: 32px; font-size: 17px; right: 20px; top: 20px; }
 }
@@ -446,13 +471,30 @@ body.settings .drawer { transform: translateX(0); }
   background: var(--acid); display: block;
 }
 
-/* history / favorites — capped so one long list can't swallow the drawer */
-#list-history, #list-favs { max-height: 32vh; overflow: hidden auto; }
-.track-row { display: flex; gap: 1.2vh; align-items: center; padding: 1vh 0; border-top: 1px solid var(--line); width: 100%; background: none; border-left: 0; border-right: 0; border-bottom: 0; text-align: left; font: inherit; color: inherit; }
+/* The whole row replays the pull. The two controls on the right are the only
+   things inside it that do anything else, so they stop the click there. */
+.track-row { display: flex; gap: 1.2vh; align-items: center; padding: 1vh 0; border-top: 1px solid var(--line); cursor: pointer; }
 .track-row:hover { background: rgba(236,233,226,.04); }
-.track-row img { width: 3.6vh; height: 3.6vh; border-radius: 2px; object-fit: cover; background: rgba(236,233,226,.07); flex: 0 0 auto; }
-.track-row > div { min-width: 0; flex: 1; }
-.track-row .t { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track-row:focus-visible { outline: 1px solid var(--acid); outline-offset: -1px; }
+.tr-thumb { position: relative; flex: 0 0 auto; line-height: 0; }
+.tr-thumb img { width: 3.6vh; height: 3.6vh; border-radius: 2px; object-fit: cover; background: rgba(236,233,226,.07); display: block; }
+.tr-thumb::after {
+  content: "\25B6"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 1.2vh; color: var(--fg); background: rgba(0,0,0,.6); border-radius: 2px;
+  opacity: 0; transition: opacity .15s;
+}
+.track-row:hover .tr-thumb::after, .track-row:focus-visible .tr-thumb::after { opacity: 1; }
+.tr-txt { min-width: 0; flex: 1; }
+.track-row .t { display: block; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-act {
+  flex: 0 0 auto; width: 2.8vh; height: 2.8vh; padding: 0; border: 0; border-radius: 50%;
+  background: none; color: var(--fg3); font: inherit; font-size: 1.7vh; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; text-decoration: none;
+}
+.tr-act:hover { color: var(--fg); background: rgba(236,233,226,.1); }
+.tr-act.on { color: var(--acid); }
+/* a pull with no discogs uri keeps the slot, so the columns stay aligned */
+.tr-act.ghost { pointer-events: none; }
 .track-row .a { color: var(--fg3); font-size: 1.4vh; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .track-row .mult { color: var(--fg2); flex: 0 0 auto; }
 .track-row.g .mult { color: var(--gold); }
@@ -461,12 +503,6 @@ body.settings .drawer { transform: translateX(0); }
 .statline.plain { border-top: 0; padding-top: 0; }
 .row-body > .opt { margin-top: 1.4vh; }
 .statline b { color: var(--fg); font-weight: 400; }
-.keys { display: grid; grid-template-columns: auto 1fr; gap: .9vh 1.2vw; font-size: 1.45vh; }
-.keys kbd {
-  font-family: var(--mono); font-size: 1.3vh; color: var(--fg2);
-  border: 1px solid var(--line); border-radius: 3px; padding: .2vh .7vh; justify-self: start;
-}
-.keys span { color: var(--fg3); }
 </style>
 </head>
 <body data-state="idle" data-chips="ok" data-grail="0">
@@ -503,35 +539,61 @@ body.settings .drawer { transform: translateX(0); }
 
 <!-- ========== transport ========== -->
 <div class="tr">
-  <button class="roll" id="btn-roll">ROLL <small id="roll-sub">pull 01 · space</small></button>
-  <button class="ico" id="btn-fav" title="Favorite (F)" aria-label="Favorite">♡</button>
-  <button class="ico" id="btn-download" title="Download MP3 (Y)" aria-label="Download">↓</button>
+  <button class="roll" id="btn-roll">ROLL <small id="roll-sub">one pull</small></button>
+  <button class="ico" id="btn-fav" title="Favorite" aria-label="Favorite">
+    <svg class="gl" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20.8 5.6a5.1 5.1 0 0 0-7.2 0L12 7.2l-1.6-1.6a5.1 5.1 0 0 0-7.2 7.2L12 20.6l8.8-8.8a5.1 5.1 0 0 0 0-6.2z"/>
+    </svg>
+  </button>
+  <button class="ico" id="btn-copy" title="Copy YouTube link" aria-label="Copy YouTube link">
+    <svg class="gl" viewBox="0 0 24 24" aria-hidden="true"><g transform="rotate(-45 12 12)">
+      <path d="M9.5 17h-2a5 5 0 0 1 0-10h2"/>
+      <path d="M14.5 7h2a5 5 0 0 1 0 10h-2"/>
+      <path d="M8.5 12h7"/>
+    </g></svg>
+  </button>
+  <button class="ico" id="btn-download" title="Download MP3" aria-label="Download" hidden>
+    <svg class="gl" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 4v11"/>
+      <path d="M7.5 10.5 12 15l4.5-4.5"/>
+      <path d="M5 19.5h14"/>
+    </svg>
+  </button>
 </div>
 
 <!-- ========== head ========== -->
 <div class="head">
   <div class="s-idle">
-    <h2 class="ttl"><span class="art">pull 01</span>Roll to start<br>the run.</h2>
-    <div class="m" id="idle-sub">an endless run — pull as long as you like</div>
+    <h2 class="ttl">Roll to start<br>digging.</h2>
+    <div class="m">every pull is a random record off discogs</div>
   </div>
   <div class="s-roll">
-    <h2 class="ttl"><span class="art">pull <span id="c-pull">01</span> · <span class="cyc" data-k="year">1968</span> · <span class="cyc" data-k="country">Sweden</span></span>pulling…</h2>
+    <h2 class="ttl"><span class="art"><span class="cyc" data-k="year">1968</span> · <span class="cyc" data-k="country">Sweden</span></span>pulling…</h2>
     <div class="m"><span class="cyc" data-k="label">Polydor</span> · <span class="cyc" data-k="hw">88 own · 201 want</span></div>
   </div>
   <div class="s-reveal s-nopreview">
-    <h2 class="ttl"><span class="art" id="h-line1">pull 01</span><span id="h-title">—</span></h2>
+    <h2 class="ttl"><span class="art" id="h-line1">—</span><span id="h-title">—</span></h2>
     <div class="m">
-      <span id="h-meta">—</span><br>
+      <span id="h-meta">—</span>
       <span class="off-grail" id="h-ratio">—</span>
       <span class="on-grail pill g" id="h-grail">grail</span>
     </div>
   </div>
 </div>
 
-<!-- ========== run table ========== -->
-<div class="runs">
-  <div class="lab"><span id="runs-label">this run</span><span>want / have</span></div>
-  <table><tbody id="run-body"></tbody></table>
+<!-- ========== log: history / favorites, paginated ========== -->
+<div class="logs">
+  <div class="tabs" role="tablist">
+    <button class="tab" id="tab-history" role="tab" aria-selected="true">history <i id="n-history">0</i></button>
+    <button class="tab" id="tab-favs" role="tab" aria-selected="false">favorites <i id="n-favs">0</i></button>
+    <button class="clr" id="btn-clear-favs" hidden>clear all</button>
+  </div>
+  <div id="log-list"></div>
+  <div class="pager">
+    <button id="pg-prev">&lsaquo; prev</button>
+    <button id="pg-next">next &rsaquo;</button>
+    <span class="of" id="pg-label">1 / 1</span>
+  </div>
 </div>
 
 <!-- the webcam overlay lives here in OBS — nothing may be positioned in it -->
@@ -544,7 +606,7 @@ body.settings .drawer { transform: translateX(0); }
 
   <div class="drawer-scroll">
     <h3>Settings</h3>
-    <div class="sub">what the roll can land on, and what it has landed on</div>
+    <div class="sub">what the roll can land on</div>
 
     <div class="row" data-row="genre" data-open="false">
       <button class="row-head"><span>genre</span><span class="val" id="v-genre">any</span></button>
@@ -581,11 +643,6 @@ body.settings .drawer { transform: translateX(0); }
       <div class="row-body"><div class="opts" id="opts-format"></div></div>
     </div>
 
-    <div class="row" data-row="runlen" data-open="false">
-      <button class="row-head"><span>pulls per run</span><span class="val" id="v-runlen">endless</span></button>
-      <div class="row-body"><div class="opts" id="opts-runlen"></div></div>
-    </div>
-
     <div class="row" data-row="grail" data-open="false">
       <button class="row-head"><span>grail threshold</span><span class="val" id="v-grail">1.5×</span></button>
       <div class="row-body">
@@ -603,35 +660,9 @@ body.settings .drawer { transform: translateX(0); }
       </div>
     </div>
 
-    <div class="row" data-row="thisrun" data-open="false">
-      <button class="row-head"><span>this run</span><span class="val" id="v-thisrun">0 pulls</span></button>
-      <div class="row-body">
-        <div class="statline plain" id="session-stats"></div>
-        <button class="opt" id="btn-new-run">start a new run</button>
-      </div>
-    </div>
-
-    <div class="row" data-row="history" data-open="false">
-      <button class="row-head"><span>history</span><span class="val" id="v-history">0</span></button>
-      <div class="row-body"><div id="list-history"></div></div>
-    </div>
-
-    <div class="row" data-row="favs" data-open="false">
-      <button class="row-head"><span>favorites</span><span class="val" id="v-favs">0</span></button>
-      <div class="row-body"><div id="list-favs"></div></div>
-    </div>
-
-    <div class="row" data-row="tempo" data-open="false">
-      <button class="row-head"><span>tempo</span><span class="val" id="v-tempo">— BPM</span></button>
-      <div class="row-body">
-        <span class="mini">Tap R along with the beat. The last eight taps are averaged.</span>
-        <button class="opt" id="btn-tap-reset">reset</button>
-      </div>
-    </div>
-
-    <div class="row" data-row="keys" data-open="false">
-      <button class="row-head"><span>shortcuts</span><span class="val" id="v-keys">9</span></button>
-      <div class="row-body"><div class="keys" id="keys"></div></div>
+    <div class="row" data-row="session" data-open="false">
+      <button class="row-head"><span>session</span><span class="val" id="v-session">0 pulls</span></button>
+      <div class="row-body"><div class="statline plain" id="session-stats"></div></div>
     </div>
   </div>
 
@@ -658,7 +689,7 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 /* ---------- state ---------- */
 let current = null;              // {artist,title,release,year,country,label,videoId,watchUrl,discogsUrl,cover,mult,…}
 let history = [];                // newest first
-let favs = JSON.parse(localStorage.getItem('digger_favs') || '[]');
+let favs = loadFavs();           // survives the tab; see loadFavs/saveFavs
 let player = null, playerReady = false;
 let deadVideos = new Set();      // videoIds that failed to embed this session — never re-served
 /* Grail odds are sampled from this session's own pulls rather than probed —
@@ -668,16 +699,21 @@ let digging = false;
 
 /* ---------- settings ---------- */
 const settings = Object.assign(
-  { runLength: 0, grailThreshold: 1.5 },   // 0 = endless, the default
+  { grailThreshold: 1.5 },
   JSON.parse(localStorage.getItem('casino_settings') || '{}')
 );
 function saveSettings() { localStorage.setItem('casino_settings', JSON.stringify(settings)); }
 
-$('token').value = localStorage.getItem('digger_token') || '';
-$('token').addEventListener('change', e => {
-  localStorage.setItem('digger_token', e.target.value.trim());
-  updateFuel();
-});
+/* Every row in the drawer is a draft until Apply — the grail threshold and the
+   token included. They used to commit the moment you touched them, which made
+   the Apply bar a half-truth: two rows were already live while the ones above
+   them were still waiting. `settings` and `token` are what the app runs on;
+   `draftSettings` and `draftToken` are what the drawer is showing. */
+let token = (localStorage.getItem('digger_token') || '').trim();
+const draftSettings = { grailThreshold: settings.grailThreshold };
+let draftToken = token;
+
+$('token').value = token;
 $('f-grail').value = settings.grailThreshold;
 
 /* ---------- discogs api ----------
@@ -695,7 +731,7 @@ $('f-grail').value = settings.grailThreshold;
    their own browser, and routing it through the server would only put it
    somewhere it doesn't belong. */
 let serverToken = false;
-function localToken() { return $('token').value.trim(); }
+function localToken() { return token; }
 function haveToken() { return serverToken || !!localToken(); }
 function usingProxy() { return serverToken && !localToken(); }
 function apiHeaders() {
@@ -1118,12 +1154,13 @@ function play(track) {
   updateMediaSession(track);
   if (playerReady) {
     player.loadVideoById(track.videoId);
+    focusPlayer();
   } else if (window.YT && YT.Player) {
     player = new YT.Player('yt', {
       videoId: track.videoId,
       playerVars: { autoplay: 1, rel: 0 },
       events: {
-        onReady: () => { playerReady = true; },
+        onReady: () => { playerReady = true; focusPlayer(); },
         onError: onPlayerError
       }
     });
@@ -1131,13 +1168,22 @@ function play(track) {
     setTimeout(() => play(track), 600);
   }
 }
+/* With no shortcut table of our own, the keyboard is only useful if it reaches
+   the iframe — so every pull hands focus back to it. preventScroll matters: the
+   layout is a fixed viewport and a scroll here would shift the whole stream. */
+function focusPlayer() {
+  try {
+    const frame = player && player.getIframe && player.getIframe();
+    if (frame) frame.focus({ preventScroll: true });
+  } catch (e) {}
+}
 function onPlayerError() {
   // Embed disabled / region-blocked / deleted after the fact — thumbnail-based
   // videoAlive() can't catch these (the video still exists, it just won't embed).
   // No auto-reroll: that would silently burn through the Discogs rate limit on
   // every bad video. Remember it so this session never re-serves it.
   if (current && current.videoId) deadVideos.add(current.videoId);
-  toast('That video won\'t embed here — roll again (space)');
+  toast('That video won\'t embed here — roll again');
 }
 const ytScript = document.createElement('script');
 ytScript.src = 'https://www.youtube.com/iframe_api';
@@ -1187,69 +1233,190 @@ function updateMediaSession(t) {
   navigator.mediaSession.setActionHandler('previoustrack', playPrev);
 }
 
-/* The lock screen's back button replays the previous pull without disturbing
-   the run — it is a listening control, not a roll. */
+/* The lock screen's back button replays the previous pull without spending a
+   chip — it is a listening control, not a roll. */
 function playPrev() {
   if (history.length < 2) return;
   const t = history[1];
   current = t;
-  play(t); renderHead(t); renderRun(); renderList(); updateFavBtn();
+  play(t); renderHead(t); renderLog(); updateFavBtn();
 }
 
 /* ---------- history & favorites ---------- */
+const HISTORY_MAX = 200;         // a long stream shouldn't grow the log without bound
 function pushHistory(t) {
   if (!t.videoId) return;
   history = history.filter(h => h.videoId !== t.videoId);
   history.unshift(t);
-  if (history.length > 50) history.pop();
+  if (history.length > HISTORY_MAX) history.pop();
 }
-function isFaved(t) { return t && t.videoId && favs.some(f => f.videoId === t.videoId); }
-function toggleFav() {
-  if (!current || !current.videoId) return;
-  if (isFaved(current)) favs = favs.filter(f => f.videoId !== current.videoId);
-  else favs.unshift(current);
-  localStorage.setItem('digger_favs', JSON.stringify(favs));
-  updateFavBtn(); renderList();
-  toast(isFaved(current) ? 'Added to favorites' : 'Removed from favorites');
+/* Favorites outlive the tab, so every read is defensive: private windows throw
+   on localStorage, and a half-written or hand-edited value must not take the
+   whole page down with it. */
+function loadFavs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('digger_favs') || '[]');
+    return Array.isArray(saved) ? saved.filter(t => t && t.videoId) : [];
+  } catch (e) { return []; }
+}
+function saveFavs() {
+  try { localStorage.setItem('digger_favs', JSON.stringify(favs)); } catch (e) {}
+}
+function isFaved(t) { return !!(t && t.videoId && favs.some(f => f.videoId === t.videoId)); }
+/* One writer for both directions: the filter also de-dupes, so re-favoriting a
+   track that is already saved moves it to the top instead of storing it twice. */
+function setFav(t, on) {
+  if (!t || !t.videoId) return;
+  favs = favs.filter(f => f.videoId !== t.videoId);
+  if (on) favs.unshift(t);
+  saveFavs();
+  updateFavBtn(); renderLog();
+}
+function toggleFav(t) {
+  const track = t || current;
+  if (!track || !track.videoId) return;
+  const on = !isFaved(track);
+  setFav(track, on);
+  toast(on ? 'Added to favorites' : 'Removed from favorites');
+}
+/* Wiping a list that survives sessions deserves a second thought, so the first
+   click only arms the button and the arming lapses on its own. */
+let clearArmed = 0;
+function clearFavs() {
+  if (!favs.length) return;
+  const btn = $('btn-clear-favs');
+  if (Date.now() > clearArmed) {
+    clearArmed = Date.now() + 4000;
+    btn.textContent = 'click again';
+    setTimeout(() => { if (Date.now() > clearArmed) btn.textContent = 'clear all'; }, 4100);
+    return;
+  }
+  clearArmed = 0;
+  favs = []; saveFavs();
+  btn.textContent = 'clear all';
+  updateFavBtn(); renderLog();
+  toast('Favorites cleared');
 }
 function updateFavBtn() {
   const on = isFaved(current);
   $('btn-fav').classList.toggle('on', on);
-  $('btn-fav').textContent = on ? '♥' : '♡';
 }
-function renderList() {
-  drawList($('list-history'), history, 'No pulls yet.');
-  drawList($('list-favs'), favs, 'No favorites yet — hit ♡ on one you like.');
-  $('v-history').textContent = history.length;
-  $('v-favs').textContent = favs.length;
+/* The log is one panel showing one of two lists, a page at a time. The tab and
+   the page are the whole of its state; everything else is derived on render. */
+const LOG_PAGE = 6;
+let logTab = 'history';
+let logPage = 0;
+function logItems() { return logTab === 'favs' ? favs : history; }
+function logPageCount() { return Math.max(1, Math.ceil(logItems().length / LOG_PAGE)); }
+function setLogTab(tab) { logTab = tab; logPage = 0; renderLog(); }
+function turnPage(by) { logPage += by; renderLog(); }
+function renderLog() {
+  const items = logItems();
+  const pages = logPageCount();
+  // Removing the last row of the last page must not strand the view past the end.
+  logPage = Math.min(Math.max(0, logPage), pages - 1);
+  const from = logPage * LOG_PAGE;
+
+  drawList($('log-list'), items.slice(from, from + LOG_PAGE),
+    logTab === 'favs' ? 'No favorites yet — hit ♡ on a pull you like.'
+                      : 'No pulls yet — hit ROLL.', logTab);
+
+  $('tab-history').setAttribute('aria-selected', String(logTab === 'history'));
+  $('tab-favs').setAttribute('aria-selected', String(logTab === 'favs'));
+  $('n-history').textContent = history.length;
+  $('n-favs').textContent = favs.length;
+
+  $('btn-clear-favs').hidden = logTab !== 'favs';
+  $('btn-clear-favs').disabled = !favs.length;
+
+  $('pg-prev').disabled = logPage === 0;
+  $('pg-next').disabled = logPage >= pages - 1;
+  $('pg-label').textContent = items.length
+    ? (from + 1) + '–' + Math.min(from + LOG_PAGE, items.length) + ' of ' + items.length
+    : '0 of 0';
 }
-function drawList(list, items, emptyCopy) {
+function thumbFor(t) {
+  return t.cover || (t.videoId ? 'https://i.ytimg.com/vi/' + t.videoId + '/default.jpg' : '');
+}
+function drawList(list, items, emptyCopy, kind) {
   list.innerHTML = '';
   if (!items.length) {
     list.innerHTML = '<div class="empty">' + emptyCopy + '</div>';
     return;
   }
   items.forEach(t => {
-    const el = document.createElement('button');
-    el.type = 'button';
+    const el = document.createElement('div');
     el.className = 'track-row' + (isGrail(t) ? ' g' : '');
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-label', 'Play ' + t.release + ' again');
+
+    const thumb = document.createElement('span');
+    thumb.className = 'tr-thumb';
     const img = document.createElement('img');
-    img.src = t.cover || (t.videoId ? 'https://i.ytimg.com/vi/' + t.videoId + '/default.jpg' : '');
+    img.src = thumbFor(t);
     img.loading = 'lazy'; img.alt = '';
+    thumb.append(img);
+
     const txt = document.createElement('div');
+    txt.className = 'tr-txt';
     const l1 = document.createElement('div'); l1.className = 't'; l1.textContent = t.release;
-    const l2 = document.createElement('div'); l2.className = 'a'; l2.textContent = t.artist + ' · ' + t.year;
+    const l2 = document.createElement('div'); l2.className = 'a'; l2.textContent = t.artist + ' \u00b7 ' + t.year;
     txt.append(l1, l2);
-    el.append(img, txt);
+
+    el.append(thumb, txt);
+
     if (t.mult != null) {
       const mult = document.createElement('span');
       mult.className = 'mult';
-      mult.textContent = t.mult.toFixed(1) + '×';
+      mult.textContent = t.mult.toFixed(1) + '\u00d7';
       el.append(mult);
     }
-    // Replay a listed track without reordering/mutating the list — clicking an
+
+    // Discogs stays a real link \u2014 middle-click and copy-link keep working,
+    // and stopping the click is all that keeps it from replaying the row too.
+    if (t.discogsUrl) {
+      const dg = document.createElement('a');
+      dg.className = 'tr-act';
+      dg.href = t.discogsUrl; dg.target = '_blank'; dg.rel = 'noopener';
+      dg.textContent = '\u2197';
+      dg.title = 'Open on discogs';
+      dg.setAttribute('aria-label', 'Open ' + t.release + ' on discogs');
+      dg.onclick = e => e.stopPropagation();
+      el.append(dg);
+    } else {
+      const slot = document.createElement('span');
+      slot.className = 'tr-act ghost';
+      el.append(slot);
+    }
+
+    // In the favorites list the trailing button is an unambiguous remove; in
+    // history it is the toggle, so a good pull can be kept without replaying it.
+    const act = document.createElement('button');
+    act.type = 'button';
+    act.className = 'tr-act';
+    if (kind === 'favs') {
+      act.textContent = '\u00d7';
+      act.title = 'Remove from favorites';
+      act.onclick = e => { e.stopPropagation(); setFav(t, false); toast('Removed from favorites'); };
+    } else {
+      const on = isFaved(t);
+      if (on) act.classList.add('on');
+      act.textContent = on ? '\u2665' : '\u2661';
+      act.title = on ? 'Remove from favorites' : 'Add to favorites';
+      act.onclick = e => { e.stopPropagation(); toggleFav(t); };
+    }
+    act.setAttribute('aria-label', act.title + ': ' + t.release);
+    el.append(act);
+
+    // Replay a listed track without reordering/mutating the list \u2014 clicking an
     // older entry should just jump to it, not shuffle it to the top.
-    el.onclick = () => { current = t; play(t); renderHead(t); renderList(); updateFavBtn(); };
+    const replay = () => { current = t; play(t); renderHead(t); renderLog(); updateFavBtn(); };
+    el.onclick = replay;
+    el.onkeydown = e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); replay(); }
+    };
+
     list.appendChild(el);
   });
 }
@@ -1257,11 +1424,11 @@ function drawList(list, items, emptyCopy) {
 
 /* ---------- head ---------- */
 function renderHead(t) {
-  const n = runNo(t);
-  $('h-line1').textContent = [n ? 'pull ' + pad(n) : '', t.year, t.country]
-    .filter(v => v && v !== '—').join(' · ');
+  $('h-line1').textContent = [t.year, t.country].filter(v => v && v !== '—').join(' · ');
   $('h-title').textContent = t.release;
+  $('h-title').title = t.release;
   $('h-meta').textContent = [t.artist, t.label, t.catno].filter(v => v && v !== '—').join(' · ');
+  $('h-meta').title = $('h-meta').textContent;
   if (t.mult == null) {
     $('h-ratio').textContent = 'no collection data';
     $('h-grail').textContent = 'grail';
@@ -1270,90 +1437,6 @@ function renderHead(t) {
     $('h-grail').textContent = 'grail · ' + ratioText(t.mult);
   }
 }
-function pad(n) { return String(n).padStart(2, '0'); }
-
-/* ---------- the run ----------
-   A run is `settings.runLength` pulls, or endless when that is 0 — the default.
-   An endless run never ends on its own, so starting over is an explicit act:
-   the drawer's new-run button, or N.
-
-   Pull numbers come off a counter rather than the array index: an endless run
-   keeps only a window of recent rows in the table, and 42 has to stay 42. */
-const RUN_LENGTHS = [['0', 'endless'], ['1', '1'], ['2', '2'], ['3', '3'], ['4', '4'], ['5', '5'], ['6', '6']];
-const RUN_WINDOW = 5;            // rows visible before the table starts dropping the oldest
-const RUN_MAX = 200;             // a long stream shouldn't grow the log without bound
-
-let run = [];
-let pullNo = 0;                  // pulls so far in this run; survives windowing
-function isEndless() { return !settings.runLength; }
-function runLengthLabel(n) { return n ? String(n) : 'endless'; }
-function runNo(t) { return t && run.includes(t) ? t.n : null; }
-function runComplete() { return !isEndless() && run.length >= settings.runLength; }
-function newRun() {
-  run = []; pullNo = 0;
-  // The player is left alone: cutting the audio to clear a table would be a
-  // bad trade on a live stream. The head simply stops claiming a pull number,
-  // because what is playing is no longer part of this run.
-  renderRun();
-  if (current) renderHead(current);
-  renderTransport();
-}
-
-function thumbFor(t) {
-  return t.cover || (t.videoId ? 'https://i.ytimg.com/vi/' + t.videoId + '/default.jpg' : '');
-}
-function cell(cls, node) {
-  const td = document.createElement('td');
-  td.className = cls;
-  if (node != null) td.append(node);
-  return td;
-}
-function runRow(t) {
-  const tr = document.createElement('tr');
-  tr.className = [t === current ? 'cur' : '', isGrail(t) ? 'g' : ''].filter(Boolean).join(' ');
-
-  const src = thumbFor(t);
-  const thumb = document.createElement(src ? 'img' : 'div');
-  if (src) { thumb.src = src; thumb.alt = ''; thumb.loading = 'lazy'; }
-
-  const title = document.createElement('span');
-  title.textContent = t.release;
-  const sub = document.createElement('small');
-  sub.textContent = [t.artist, t.year, t.country].filter(v => v && v !== '—').join(' · ');
-  const t_ = cell('t'); t_.append(title, sub);
-
-  tr.append(cell('n', document.createTextNode(pad(t.n))), cell('th', thumb), t_,
-            cell('r', document.createTextNode(t.mult == null ? '—' : t.mult.toFixed(1) + '×')));
-
-  return tr;
-}
-/* The pull being rolled already has a row — dim, in place — so the table
-   doesn't jump when it resolves. */
-function blankRow(n, cls, label) {
-  const tr = document.createElement('tr');
-  tr.className = cls;
-  tr.append(cell('n', document.createTextNode(pad(n))), cell('th'),
-            cell('t', document.createTextNode(label)), cell('r'));
-  return tr;
-}
-function renderRun() {
-  const tb = $('run-body');
-  tb.innerHTML = '';
-  // A fixed run is short enough to show whole; an endless one shows its tail,
-  // and the label row carries the count that the rows can no longer convey.
-  const shown = isEndless() ? run.slice(-RUN_WINDOW) : run;
-  shown.forEach(t => tb.appendChild(runRow(t)));
-  if (beat === 'rolling') tb.appendChild(blankRow(pullNo + 1, 'cur next', 'pulling…'));
-  else if (!runComplete()) tb.appendChild(blankRow(pullNo + 1, 'next', '—'));
-  $('runs-label').textContent = run.length > shown.length
-    ? 'this run · ' + pullNo + ' pulls'
-    : 'this run';
-  const n = settings.runLength;
-  $('idle-sub').textContent = isEndless()
-    ? 'an endless run — pull as long as you like'
-    : (n === 1 ? 'one pull' : n + ' pulls') + ', then the run starts over';
-  $('v-thisrun').textContent = pullNo + (pullNo === 1 ? ' pull' : ' pulls');
-}
 
 /* The transport's sub-label is the one place the next action is spelled out,
    so it is derived from state rather than written at each call site. */
@@ -1361,16 +1444,14 @@ function renderTransport() {
   const f = fuelInfo();
   if (f.rolls <= 0) {
     $('roll-sub').textContent = 'refill ' + clock(refillIn(f) || 60);
-  } else if (runComplete() && beat !== 'rolling') {
-    $('roll-sub').textContent = 'new run \u00b7 space';
   } else {
-    $('roll-sub').textContent = 'pull ' + pad(pullNo + 1) + ' \u00b7 space';
+    $('roll-sub').textContent = 'pull ' + (session.pulls + 1);
   }
   const playable = !!(current && current.videoId);
-  $('btn-fav').disabled = !playable;
-  $('btn-download').disabled = !playable;
-  $('btn-fav').style.opacity = playable ? '' : '.4';
-  $('btn-download').style.opacity = playable ? '' : '.4';
+  [$('btn-fav'), $('btn-copy'), $('btn-download')].forEach(b => {
+    b.disabled = !playable;
+    b.style.opacity = playable ? '' : '.4';
+  });
 }
 
 /* ---------- the state machine ----------
@@ -1412,7 +1493,6 @@ function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
 
 let cycTimer = null;
 function startCyclers() {
-  $('c-pull').textContent = pad(pullNo + 1);
   renderCycler();
   const tick = () => document.querySelectorAll('.cyc').forEach(el => { el.textContent = POOLS[el.dataset.k](); });
   tick();
@@ -1427,7 +1507,7 @@ function stopCyclers() { clearInterval(cycTimer); cycTimer = null; }
    session flickers real sleeves. */
 function renderCycler() {
   const seen = [], out = [];
-  [...run].reverse().concat(history).forEach(t => {
+  history.forEach(t => {
     const src = t.cover || (t.videoId ? 'https://i.ytimg.com/vi/' + t.videoId + '/hqdefault.jpg' : '');
     if (src && !seen.includes(src)) { seen.push(src); }
   });
@@ -1452,7 +1532,6 @@ function renderCycler() {
 async function roll() {
   if (beat === 'rolling') return;
   if (currentState() === 'nochips') { toast('Out of chips — the table refills within a minute.'); return; }
-  if (runComplete()) { newRun(); }
 
   const gen = ++rollGen;
   const back = beat;
@@ -1476,9 +1555,6 @@ async function roll() {
 function commitPull(res, back) {
   if (res.ok || res.reason === 'nopreview') {
     current = res.pull;
-    current.n = ++pullNo;
-    run.push(current);
-    if (run.length > RUN_MAX) run.shift();
     recordPull(current);
     if (res.ok) {
       setState(isGrail(current) ? 'grail' : 'reveal');
@@ -1491,7 +1567,8 @@ function commitPull(res, back) {
         '<a href="' + escapeAttr(current.discogsUrl || '#') + '" target="_blank" rel="noopener">open it on discogs</a>';
     }
     renderHead(current);
-    renderList();
+    if (logTab === 'history') logPage = 0;
+    renderLog();
     updateFavBtn();
   } else if (res.reason === 'timeout') {
     setState('nopreview');
@@ -1518,7 +1595,7 @@ function commitPull(res, back) {
     setState(back);
     toast('Something went wrong talking to Discogs. Try again.');
   }
-  renderRun();
+  renderLog();
   renderTransport();
 }
 function escapeAttr(v) { return String(v).replace(/"/g, '&quot;'); }
@@ -1529,6 +1606,7 @@ function recordPull(t) {
   renderSession();
 }
 function renderSession() {
+  $('v-session').textContent = session.pulls + (session.pulls === 1 ? ' pull' : ' pulls');
   const odds = session.pulls < 5 ? 'sampling…'
     : session.grails ? '1 in ' + Math.round(session.pulls / session.grails)
     : 'none in ' + session.pulls;
@@ -1538,27 +1616,13 @@ function renderSession() {
     '<span>odds <b>' + odds + '</b></span>';
 }
 
-/* ---------- tap tempo ----------
-   The BPM box is gone with the old layout, but the mechanic isn't: R still
-   taps and the reading lives in the drawer's Log section. */
-let taps = [];
-function tap() {
-  const now = performance.now();
-  if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
-  taps.push(now);
-  if (taps.length < 2) { toast('Keep tapping…'); return; }
-  const iv = [];
-  for (let i = 1; i < taps.length; i++) iv.push(taps[i] - taps[i - 1]);
-  const recent = iv.slice(-8);
-  const bpm = Math.round(60000 / (recent.reduce((a, b) => a + b, 0) / recent.length));
-  $('v-tempo').textContent = bpm + ' BPM';
-  toast(bpm + ' BPM');
+/* ---------- copy link ---------- */
+function copyLink() {
+  if (!current || !current.watchUrl) return;
+  navigator.clipboard.writeText(current.watchUrl).then(
+    () => toast('YouTube link copied'),
+    () => toast('Could not copy the link'));
 }
-$('btn-tap-reset').onclick = () => {
-  taps = [];
-  $('v-tempo').textContent = '— BPM';
-  toast('Tempo cleared');
-};
 
 /* ---------- download ---------- */
 async function downloadAudio() {
@@ -1594,14 +1658,6 @@ async function downloadAudio() {
   }
 }
 
-/* ---------- play / pause ----------
-   Space now rolls, and YouTube's own controls are the primary way to pause.
-   K is YouTube's own shortcut for it, so it is the least surprising remap. */
-function togglePlay() {
-  if (!playerReady || !current || !current.videoId) return;
-  if (player.getPlayerState() === 1) player.pauseVideo(); else player.playVideo();
-}
-
 /* ---------- drawer ---------- */
 function setDrawer(on) {
   document.body.classList.toggle('settings', on);
@@ -1621,17 +1677,24 @@ function toast(msg) {
 }
 
 /* ---------- wiring ---------- */
-$('btn-roll').onclick = roll;
-$('btn-new-run').onclick = () => { newRun(); toast('New run — back to pull 01'); };
-$('btn-fav').onclick = toggleFav;
+/* A clicked button keeps focus, and a focused button answers space — so a pull
+   that never reaches the player (no preview, a timeout) would leave ROLL armed
+   and the next space would roll again. Dropping focus ends that. */
+$('btn-roll').onclick = () => { $('btn-roll').blur(); roll(); };
+$('btn-fav').onclick = () => toggleFav();
+$('tab-history').onclick = () => setLogTab('history');
+$('tab-favs').onclick = () => setLogTab('favs');
+$('pg-prev').onclick = () => turnPage(-1);
+$('pg-next').onclick = () => turnPage(1);
+$('btn-clear-favs').onclick = clearFavs;
+$('btn-copy').onclick = copyLink;
 $('btn-download').onclick = downloadAudio;
 $('f-grail').addEventListener('change', e => {
-  settings.grailThreshold = Math.min(20, Math.max(1, parseFloat(e.target.value) || 1.5));
-  e.target.value = settings.grailThreshold;
-  saveSettings();
-  reflowGrail();
+  draftSettings.grailThreshold = Math.min(20, Math.max(1, parseFloat(e.target.value) || 1.5));
+  e.target.value = draftSettings.grailThreshold;
+  renderDrawer();
 });
-$('token').addEventListener('input', () => { renderDrawer(); updateFuel(); });
+$('token').addEventListener('input', e => { draftToken = e.target.value.trim(); renderDrawer(); });
 
 /* An edit only previews: it probes the draft's count so the Apply bar can say
    what committing would land on. The top bar is untouched until Apply. */
@@ -1689,27 +1752,21 @@ function renderDrawer() {
   buildOptions($('opts-genre'), GENRES.map(g => [g, g || 'any']),
     v => v === draft.genre, v => { setGenre(v); });
   buildOptions($('opts-format'), FORMATS, v => v === draft.format, v => { draft.format = v; });
-  buildOptions($('opts-runlen'), RUN_LENGTHS,
-    v => +v === settings.runLength, v => { settings.runLength = +v; saveSettings(); renderRun(); renderTransport(); });
   buildOptions($('opts-grail'), ['1.2', '1.5', '2', '3', '5'].map(n => [n, n + '\u00d7']),
-    v => parseFloat(v) === settings.grailThreshold, v => { settings.grailThreshold = parseFloat(v); saveSettings(); $('f-grail').value = v; reflowGrail(); });
+    v => parseFloat(v) === draftSettings.grailThreshold,
+    v => { draftSettings.grailThreshold = parseFloat(v); $('f-grail').value = v; });
 
   $('v-genre').textContent = draft.genre || 'any';
   const st = styleList(draft.style);
   $('v-style').textContent = !st.length ? 'any' : st.length > 3 ? st.length + ' styles' : st.join(', ');
   $('v-country').textContent = draft.country.trim() || 'any';
   $('v-format').textContent = (FORMATS.find(f => f[0] === draft.format) || ['', 'any format'])[1];
-  $('v-runlen').textContent = runLengthLabel(settings.runLength);
-  $('v-grail').textContent = settings.grailThreshold + '\u00d7';
-  $('v-token').textContent = localToken() ? maskToken(localToken())
+  $('v-grail').textContent = draftSettings.grailThreshold + '\u00d7';
+  $('v-token').textContent = draftToken ? maskToken(draftToken)
     : serverToken ? 'server default' : 'not set';
   $('token-note').textContent = serverToken
     ? 'This deployment signs Discogs requests with its own token, which stays on the server and never reaches this page — but everyone watching shares its 60 requests a minute. Paste your own to get a private 60 instead. discogs.com → Settings → Developers.'
     : 'A free token raises the limit from 25 to 60 Discogs requests a minute — roughly 6 chips to 14 — and unlocks Discogs cover art, which unauthenticated search does not return. discogs.com → Settings → Developers.';
-  $('v-thisrun').textContent = pullNo + (pullNo === 1 ? ' pull' : ' pulls');
-  $('v-history').textContent = history.length;
-  $('v-favs').textContent = favs.length;
-  $('v-keys').textContent = SHORTCUTS.length;
   renderYears();
   renderApply();
 }
@@ -1737,8 +1794,13 @@ function applyNote(n, pending, countMoved) {
     : 'unapplied changes — apply to use them';
 }
 
+/* Pending is now the whole drawer, not just the query — otherwise the bar would
+   sit disabled while a changed threshold or token waited to be committed. */
+function grailPending() { return draftSettings.grailThreshold !== settings.grailThreshold; }
+function tokenPending() { return draftToken !== token; }
+
 function renderApply() {
-  const pending = !sameFilters(draft, filters);
+  const pending = !sameFilters(draft, filters) || grailPending() || tokenPending();
   // draft and filters agree when nothing is pending, so one count serves both.
   const n = countOf(draft);
   const countMoved = countKeyFor(draft) !== countKeyFor(filters);
@@ -1749,23 +1811,43 @@ function renderApply() {
   $('apply-note').classList.toggle('warn', short);
   $('btn-settings').classList.toggle('pending', pending);
 }
-function applyFilters() {
-  if (sameFilters(draft, filters)) return;
-  filters = Object.assign({}, draft);
-  // The candidate pool was dealt from the old filters — drop it so the very
-  // next roll re-queries rather than draining stale records.
-  pool = []; poolKey = ''; poolUsed = 0;
-  renderTopBar();
+function applyAll() {
+  const filtersChanged = !sameFilters(draft, filters);
+  const grailChanged = grailPending();
+  const tokenChanged = tokenPending();
+  if (!filtersChanged && !grailChanged && !tokenChanged) return;
+
+  if (filtersChanged) {
+    filters = Object.assign({}, draft);
+    // The candidate pool was dealt from the old filters — drop it so the very
+    // next roll re-queries rather than draining stale records.
+    pool = []; poolKey = ''; poolUsed = 0;
+    renderTopBar();
+  }
+  if (grailChanged) {
+    settings.grailThreshold = draftSettings.grailThreshold;
+    saveSettings();
+    reflowGrail();
+  }
+  if (tokenChanged) {
+    token = draftToken;
+    try { localStorage.setItem('digger_token', token); } catch (e) {}
+    // A personal token moves the rate limit, and the chips are drawn from it.
+    updateFuel();
+  }
   renderDrawer();
   refreshCounts(filters);
-  toast('Filters applied — ' + rangeLabel(filters) + ' · ' + (filters.genre || 'any genre'));
+  toast(filtersChanged
+    ? 'Filters applied — ' + rangeLabel(filters) + ' \u00b7 ' + (filters.genre || 'any genre')
+    : 'Applied \u2014 ' + [grailChanged && 'grail threshold', tokenChanged && 'discogs token']
+        .filter(Boolean).join(' and '));
 }
-$('btn-apply').onclick = applyFilters;
+$('btn-apply').onclick = applyAll;
 /* Changing the threshold re-decides every pull already on the table. */
 function reflowGrail() {
   if (current && (beat === 'reveal' || beat === 'grail')) setState(isGrail(current) ? 'grail' : 'reveal');
   else setState(beat);
-  renderRun(); renderList(); renderDrawer();
+  renderLog(); renderDrawer();
 }
 function setGenre(v) {
   draft.genre = v;
@@ -1920,40 +2002,12 @@ document.addEventListener('click', e => {
 });
 
 /* ---------- keyboard ----------
-   One table, so the drawer's list and the handler can't drift apart. */
-const SHORTCUTS = [
-  ['space', 'roll the next pull', () => roll()],
-  ['k', 'play / pause', togglePlay],
-  ['f', 'favorite this pull', toggleFav],
-  ['y', 'download the mp3', () => downloadAudio()],
-  ['c', 'copy the youtube link', copyLink],
-  ['r', 'tap tempo', tap],
-  ['n', 'start a new run', () => { newRun(); toast('New run — back to pull 01'); }],
-  ['s', 'open / close settings', () => setDrawer(!document.body.classList.contains('settings'))],
-  ['esc', 'close settings', () => setDrawer(false)]
-];
-function copyLink() {
-  if (!current || !current.watchUrl) return;
-  navigator.clipboard.writeText(current.watchUrl).then(
-    () => toast('YouTube link copied'),
-    () => toast('Could not copy the link'));
-}
-function renderKeys() {
-  $('keys').innerHTML = '';
-  SHORTCUTS.forEach(([key, what]) => {
-    const kbd = document.createElement('kbd'); kbd.textContent = key;
-    const span = document.createElement('span'); span.textContent = what;
-    $('keys').append(kbd, span);
-  });
-}
+   There is no global shortcut table any more: every key belongs to whatever
+   has focus, which after a pull is the YouTube iframe and its own controls
+   (space, k, arrows, f). Escape is the single exception — it can reach neither
+   the player nor a text field, and a drawer with no way out is worse. */
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { setDrawer(false); return; }
-  if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.isContentEditable) return;
-  const k = e.key === ' ' ? 'space' : e.key.toLowerCase();
-  const hit = SHORTCUTS.find(sc => sc[0] === k);
-  if (!hit) return;
-  e.preventDefault();
-  hit[2]();
+  if (e.key === 'Escape') setDrawer(false);
 });
 
 /* ---------- boot ---------- */
@@ -1969,14 +2023,15 @@ fetch('/config')
   .catch(() => ({}))
   .then(cfg => {
     serverToken = !!cfg.serverToken;
+    // yt-dlp downloads are opt-in server-side (ENABLE_DOWNLOAD), so the button
+    // only exists where the endpoint behind it does.
+    $('btn-download').hidden = !cfg.downloads;
     updateFuel();
     renderDrawer();
     refreshCounts();
   });
-renderList();
+renderLog();
 renderSession();
-renderKeys();
-renderRun();
 setState('idle');
 </script>
 </body>
