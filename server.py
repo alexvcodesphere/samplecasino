@@ -29,6 +29,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import db as db_layer
+
 PORT = int(os.environ.get('PORT', '8765'))
 # Locally bind loopback (the /download endpoint runs a subprocess, so don't expose
 # it to the LAN); on Codesphere set HOST=0.0.0.0 so the workspace router can reach it.
@@ -51,6 +53,16 @@ YOUTUBE_RE = re.compile(r'^https://(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[\
 # gate is here rather than only in the UI — hiding the button would still leave
 # /download reachable by anyone who guessed the URL.
 ENABLE_DOWNLOAD = os.environ.get('ENABLE_DOWNLOAD', '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+# The sample index, built by tools/build_db.py. Absent, the app falls back to
+# searching Discogs the old way — four requests a pull instead of one — so this
+# is optional rather than fatal.
+DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///data/samples.db')
+INDEX = None
+try:
+    INDEX = db_layer.open_db(DATABASE_URL)
+except Exception as e:                        # noqa: BLE001 — any failure is the same answer
+    print(f'no sample index ({e}); the app will search Discogs directly', file=sys.stderr)
 
 DISCOGS_API = 'https://api.discogs.com'
 DISCOGS_TOKEN = os.environ.get('DISCOGS_TOKEN', '').strip()
@@ -122,7 +134,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path == '/config':
             # Whether a token exists, never the token itself.
             self.send_json(200, {'serverToken': bool(DISCOGS_TOKEN),
-                                 'downloads': ENABLE_DOWNLOAD})
+                                 'downloads': ENABLE_DOWNLOAD,
+                                 'index': INDEX is not None})
+        elif parsed.path == '/counts':
+            self.handle_counts(parsed)
+        elif parsed.path == '/pull':
+            self.handle_pull(parsed)
         elif parsed.path == '/discogs' or parsed.path.startswith('/discogs/'):
             self.handle_discogs(parsed)
         elif parsed.path == '/download':
@@ -131,6 +148,50 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if parsed.path == '/':
                 self.path = '/' + APP_FILE   # serve the app on the main route
             super().do_GET()
+
+    # ---- the sample index -------------------------------------------------
+    def filters_from(self, parsed):
+        q = urllib.parse.parse_qs(parsed.query)
+        one = lambda k: (q.get(k) or [''])[0].strip()
+        def num(k):
+            v = one(k)
+            return int(v) if v.lstrip('-').isdigit() else None
+        return db_layer.Filters(
+            genre=one('genre'),
+            # the drawer sends styles as one comma-joined value, ANDed
+            styles=[s for s in one('style').split(',') if s.strip()],
+            country=one('country'),
+            vinyl=one('format').lower() == 'vinyl',
+            year_from=num('yearFrom'),
+            year_to=num('yearTo'))
+
+    def handle_counts(self, parsed):
+        if INDEX is None:
+            self.send_json(503, {'error': 'No sample index on this server.'})
+            return
+        f = self.filters_from(parsed)
+        try:
+            self.send_json(200, {'count': INDEX.count(f)})
+        except Exception as e:                # noqa: BLE001
+            self.send_json(500, {'error': str(e)})
+
+    def handle_pull(self, parsed):
+        """One random release matching the filters — what used to cost a
+        Discogs search plus a release fetch per candidate. Have/want are not in
+        the dump, so the page still asks Discogs for those, once."""
+        if INDEX is None:
+            self.send_json(503, {'error': 'No sample index on this server.'})
+            return
+        f = self.filters_from(parsed)
+        try:
+            track = INDEX.pick(f)
+        except Exception as e:                # noqa: BLE001
+            self.send_json(500, {'error': str(e)})
+            return
+        if track is None:
+            self.send_json(404, {'error': 'Nothing matches these filters.'})
+            return
+        self.send_json(200, track)
 
     def handle_discogs(self, parsed):
         if not DISCOGS_TOKEN:
