@@ -34,7 +34,9 @@ size_of() { [ -f "$1" ] && wc -c < "$1" | tr -d ' ' || echo 0; }
 # comparing against this rather than by `gzip -t`: decompressing 11 GB off
 # network storage takes minutes, long enough that the retry loop starts a second
 # check on top of the first, and it answers a question curl already answered.
-EXPECT=$(curl -sIL --max-time 120 "$URL" | awk 'BEGIN{IGNORECASE=1} /^content-length:/{v=$2} END{gsub(/\r/,"",v); print v}')
+# grep -i, not awk's IGNORECASE: that is a gawk extension and this runs under
+# mawk on the server, where it silently matches nothing.
+EXPECT=$(curl -sIL --max-time 120 "$URL" | tr -d '\r' | grep -i '^content-length:' | tail -1 | awk '{print $2}')
 [ -n "$EXPECT" ] && echo "expecting $EXPECT bytes"
 
 if [ "$(size_of "$OUT")" = "$EXPECT" ] && [ -n "$EXPECT" ]; then
@@ -56,13 +58,23 @@ while :; do
   set -e
 
   now=$(size_of "$OUT")
-  if [ -n "$EXPECT" ] && [ "$now" = "$EXPECT" ]; then
-    printf '%s  COMPLETE — %s bytes -> %s\n' "$(date '+%H:%M:%S')" "$now" "$OUT"
-    exit 0
+
+  # curl exiting 0 means the transfer finished — that alone ends this, with the
+  # expected size as a second opinion when the HEAD gave one. Hanging completion
+  # on EXPECT alone is what made this loop immortal when the HEAD came back
+  # empty: a finished download, waiting 900s to try again, forever.
+  if [ "$rc" -eq 0 ] && [ "$now" -gt 0 ]; then
+    if [ -z "$EXPECT" ] || [ "$now" = "$EXPECT" ]; then
+      printf '%s  COMPLETE — %s bytes -> %s\n' "$(date '+%H:%M:%S')" "$now" "$OUT"
+      exit 0
+    fi
+    printf '%s  curl finished at %s bytes, expected %s — retrying\n' \
+      "$(date '+%H:%M:%S')" "$now" "$EXPECT"
   fi
+
   if [ "$now" -gt "$have" ]; then
     printf '%s  progress, continuing\n' "$(date '+%H:%M:%S')"; sleep 5
   else
-    printf '%s  refused (curl %d) — waiting %ds\n' "$(date '+%H:%M:%S')" "$rc" "$WAIT"; sleep "$WAIT"
+    printf '%s  no progress (curl %d) — waiting %ds\n' "$(date '+%H:%M:%S')" "$rc" "$WAIT"; sleep "$WAIT"
   fi
 done
