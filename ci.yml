@@ -1,6 +1,10 @@
 schemaVersion: v0.4
 prepare:
   steps:
+    # The server runs on FastAPI/uvicorn now. Same interpreter rule as below:
+    # whatever runs server.py has to be able to import these.
+    - name: Install the server's own dependencies
+      command: python3 -m pip install --user --break-system-packages -r requirements.txt || python3 -m pip install --user -r requirements.txt
     # yt-dlp and yt-dlp-ejs MUST land in the same interpreter: yt-dlp imports the
     # solver package to answer YouTube's JS challenge, and a standalone yt-dlp
     # binary (e.g. from Nix) brings its own Python that cannot see these packages
@@ -18,7 +22,11 @@ prepare:
 test:
   steps:
     - name: Syntax-check the server
-      command: python3 -m py_compile server.py
+      command: python3 -m py_compile server.py db.py
+    # The app boots without an index and falls back to searching Discogs, so a
+    # broken import would otherwise only show up as four requests a pull again.
+    - name: Verify the server and its database layer import
+      command: python3 -c "import server, db; print('server + db import OK')"
     # Fail the deploy loudly if the download dependencies are wired up wrong.
     # Without this the app still boots and only the Download button breaks, with
     # a 403 that says nothing about the actual cause.

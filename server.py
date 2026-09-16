@@ -16,7 +16,6 @@ The port comes from $PORT (Codesphere sets 3000); it defaults to 8765 locally.
 Bound to 127.0.0.1 — Codesphere routes external traffic to localhost, and the
 download endpoint executes a subprocess based on request input.
 """
-import http.server
 import importlib.util
 import json
 import re
@@ -28,6 +27,11 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+
+import uvicorn
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 
 import db as db_layer
 
@@ -126,202 +130,172 @@ def subprocess_env():
     return env
 
 
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        if parsed.path == '/health':
-            self.send_json(200, {'status': 'ok'})
-        elif parsed.path == '/config':
-            # Whether a token exists, never the token itself.
-            self.send_json(200, {'serverToken': bool(DISCOGS_TOKEN),
-                                 'downloads': ENABLE_DOWNLOAD,
-                                 'index': INDEX is not None})
-        elif parsed.path == '/counts':
-            self.handle_counts(parsed)
-        elif parsed.path == '/pull':
-            self.handle_pull(parsed)
-        elif parsed.path == '/discogs' or parsed.path.startswith('/discogs/'):
-            self.handle_discogs(parsed)
-        elif parsed.path == '/download':
-            self.handle_download(parsed)
-        else:
-            if parsed.path == '/':
-                self.path = '/' + APP_FILE   # serve the app on the main route
-            super().do_GET()
+app = FastAPI(title='Sample Casino', docs_url=None, redoc_url=None)
 
-    # ---- the sample index -------------------------------------------------
-    def filters_from(self, parsed):
-        q = urllib.parse.parse_qs(parsed.query)
-        one = lambda k: (q.get(k) or [''])[0].strip()
-        def num(k):
-            v = one(k)
-            return int(v) if v.lstrip('-').isdigit() else None
-        return db_layer.Filters(
-            genre=one('genre'),
-            # the drawer sends styles as one comma-joined value, ANDed
-            styles=[s for s in one('style').split(',') if s.strip()],
-            country=one('country'),
-            vinyl=one('format').lower() == 'vinyl',
-            year_from=num('yearFrom'),
-            year_to=num('yearTo'))
 
-    def handle_counts(self, parsed):
-        if INDEX is None:
-            self.send_json(503, {'error': 'No sample index on this server.'})
-            return
-        f = self.filters_from(parsed)
-        try:
-            self.send_json(200, {'count': INDEX.count(f)})
-        except Exception as e:                # noqa: BLE001
-            self.send_json(500, {'error': str(e)})
+@app.exception_handler(HTTPException)
+def as_error(request, exc):
+    """The page reads `error` off a failed response; FastAPI's own shape is
+    `detail`. Keeping the old key means the server change is invisible to it."""
+    return JSONResponse({'error': exc.detail}, status_code=exc.status_code)
 
-    def handle_pull(self, parsed):
-        """One random release matching the filters — what used to cost a
-        Discogs search plus a release fetch per candidate. Have/want are not in
-        the dump, so the page still asks Discogs for those, once."""
-        if INDEX is None:
-            self.send_json(503, {'error': 'No sample index on this server.'})
-            return
-        f = self.filters_from(parsed)
-        try:
-            track = INDEX.pick(f)
-        except Exception as e:                # noqa: BLE001
-            self.send_json(500, {'error': str(e)})
-            return
-        if track is None:
-            self.send_json(404, {'error': 'Nothing matches these filters.'})
-            return
-        self.send_json(200, track)
 
-    def handle_discogs(self, parsed):
-        if not DISCOGS_TOKEN:
-            self.send_json(404, {'error': 'No server-side Discogs token configured.'})
-            return
+def _filters(genre, style, country, fmt, year_from, year_to):
+    """The drawer's query string, as the index understands it. Style arrives as
+    one comma-joined value and is ANDed, the way Discogs treats it."""
+    return db_layer.Filters(
+        genre=(genre or '').strip(),
+        styles=[s for s in (style or '').split(',') if s.strip()],
+        country=(country or '').strip(),
+        vinyl=(fmt or '').lower() == 'vinyl',
+        year_from=year_from,
+        year_to=year_to)
 
-        # The Discogs path is carried in our own path, and the query is passed
-        # through untouched. It used to travel in a "path" parameter, which
-        # Codesphere's edge 403s unless it happens to be the first parameter in
-        # the query string — not a thing worth depending on, and invisible
-        # locally because only the edge does it.
-        #
-        # parsed.path is NOT unquoted, so an encoded traversal stays encoded and
-        # simply fails to match below rather than slipping through as "..".
-        path = parsed.path[len('/discogs'):]
-        if not DISCOGS_PATH_RE.match(path):
-            self.send_json(400, {'error': 'Unsupported Discogs path.'})
-            return
 
-        req = urllib.request.Request(
-            DISCOGS_API + path + ('?' + parsed.query if parsed.query else ''),
-            headers={
-                'Authorization': 'Discogs token=' + DISCOGS_TOKEN,
-                'User-Agent': DISCOGS_UA,
-                'Accept': 'application/json',
-            })
-        try:
-            with urllib.request.urlopen(req, timeout=20) as r:
-                body, status, headers = r.read(), r.status, r.headers
-        except urllib.error.HTTPError as e:
-            # Pass the status through — the app reads 429 as a spent balance.
-            body, status, headers = (e.read() or b'{}'), e.code, e.headers
-        except Exception:
-            self.send_json(502, {'error': 'Could not reach Discogs.'})
-            return
+@app.get('/health')
+def health():
+    return {'status': 'ok'}
 
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(body)))
-        # Discogs reports what is left of the bucket, but only lists Location in
-        # its access-control-expose-headers, so a browser calling Discogs
-        # directly cannot read these. Through this proxy it can — and with a shared
-        # server token that count is the only way one viewer learns that another
-        # has been spending it.
-        for h in ('X-Discogs-Ratelimit', 'X-Discogs-Ratelimit-Remaining', 'X-Discogs-Ratelimit-Used'):
-            if headers.get(h) is not None:
-                self.send_header(h, headers.get(h))
-        self.end_headers()
-        self.wfile.write(body)
 
-    def handle_download(self, parsed):
-        if not ENABLE_DOWNLOAD:
-            self.send_json(404, {'error': 'Downloads are disabled on this server.'})
-            return
-        qs = urllib.parse.parse_qs(parsed.query)
-        url = (qs.get('url') or [''])[0]
-        title = (qs.get('title') or ['track'])[0]
+@app.get('/config')
+def config():
+    # Whether a token exists, never the token itself.
+    return {'serverToken': bool(DISCOGS_TOKEN),
+            'downloads': ENABLE_DOWNLOAD,
+            'index': INDEX is not None}
 
-        if not YOUTUBE_RE.match(url):
-            self.send_json(400, {'error': 'Not a valid YouTube URL.'})
-            return
 
-        safe_title = re.sub(r'[^\w\s.,()\'&-]', '', title).strip() or 'track'
+# Handlers are sync on purpose: sqlite, urllib and subprocess all block, and
+# FastAPI runs a `def` endpoint in its threadpool. Declaring them `async` would
+# park that work on the event loop and stall every other request.
+@app.get('/counts')
+def counts(genre: str = '', style: str = '', country: str = '', format: str = '',
+           yearFrom: int = None, yearTo: int = None):
+    if INDEX is None:
+        raise HTTPException(503, 'No sample index on this server.')
+    f = _filters(genre, style, country, format, yearFrom, yearTo)
+    return {'count': INDEX.count(f)}
 
-        with tempfile.TemporaryDirectory() as tmp:
-            outtmpl = os.path.join(tmp, '%(title)s.%(ext)s')
-            try:
-                subprocess.run(
-                    ytdlp_command() + youtube_args() + ['-x', '--audio-format', 'mp3',
-                     '--audio-quality', '0', '--no-playlist', '-o', outtmpl, '--', url],
-                    check=True, capture_output=True, text=True, timeout=180,
-                    env=subprocess_env()
-                )
-            except FileNotFoundError:
-                self.send_json(500, {'error': 'yt-dlp is not installed on the server.'})
-                return
-            except subprocess.TimeoutExpired:
-                self.send_json(504, {'error': 'Download timed out.'})
-                return
-            except subprocess.CalledProcessError as e:
-                err = (e.stderr or '').strip()
-                if 'No module named' in err:
-                    self.send_json(500, {'error': 'yt-dlp is not installed on the server.'})
-                    return
-                # A missing JS runtime or solver script surfaces as a bare "HTTP Error
-                # 403" on the media URL, which points nowhere useful. The real cause is
-                # in the warnings above it, so check for those first.
-                if ('challenge solving failed' in err or 'Signature solving failed' in err
-                        or 'No supported JavaScript runtime' in err):
-                    self.send_json(500, {'error': 'yt-dlp cannot solve YouTube\'s JS '
-                                        'challenge. Install a JS runtime (deno) and the '
-                                        'yt-dlp-ejs solver package on the server.'})
-                    return
-                msg = err.splitlines()[-1] if err else 'yt-dlp failed.'
-                self.send_json(502, {'error': msg[:200]})
-                return
 
-            files = [f for f in os.listdir(tmp) if f.endswith('.mp3')]
-            if not files:
-                self.send_json(502, {'error': 'No audio file produced (is ffmpeg installed?).'})
-                return
+@app.get('/pull')
+def pull(genre: str = '', style: str = '', country: str = '', format: str = '',
+         yearFrom: int = None, yearTo: int = None):
+    """One random release matching the filters — what used to cost a Discogs
+    search plus a release fetch per candidate. Have/want are not in the dump, so
+    the page still asks Discogs for those, once."""
+    if INDEX is None:
+        raise HTTPException(503, 'No sample index on this server.')
+    track = INDEX.pick(_filters(genre, style, country, format, yearFrom, yearTo))
+    if track is None:
+        raise HTTPException(404, 'Nothing matches these filters.')
+    return track
 
-            path = os.path.join(tmp, files[0])
-            size = os.path.getsize(path)
-            fname = urllib.parse.quote(safe_title + '.mp3')
 
-            self.send_response(200)
-            self.send_header('Content-Type', 'audio/mpeg')
-            self.send_header('Content-Length', str(size))
-            self.send_header('Content-Disposition', f"attachment; filename*=UTF-8''{fname}")
-            self.end_headers()
-            with open(path, 'rb') as f:
-                self.wfile.write(f.read())
+@app.get('/discogs/{rest:path}')
+def discogs(rest: str, request: Request):
+    if not DISCOGS_TOKEN:
+        raise HTTPException(404, 'No server-side Discogs token configured.')
 
-    def send_json(self, status, obj):
-        body = json.dumps(obj).encode('utf-8')
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+    # The Discogs path is carried in our own path, and the query is passed
+    # through untouched. It used to travel in a "path" parameter, which
+    # Codesphere's edge 403s unless it happens to be the first parameter in the
+    # query string — not a thing worth depending on, and invisible locally
+    # because only the edge does it.
+    path = '/' + rest
+    if not DISCOGS_PATH_RE.match(path):
+        raise HTTPException(400, 'Unsupported Discogs path.')
 
-    def log_message(self, fmt, *args):
-        if '/download' in (self.path or ''):
-            super().log_message(fmt, *args)
-        # keep static-file request logs quiet
+    query = request.url.query
+    req = urllib.request.Request(
+        DISCOGS_API + path + ('?' + query if query else ''),
+        headers={
+            'Authorization': 'Discogs token=' + DISCOGS_TOKEN,
+            'User-Agent': DISCOGS_UA,
+            'Accept': 'application/json',
+        })
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            body, status, headers = r.read(), r.status, r.headers
+    except urllib.error.HTTPError as e:
+        # Pass the status through — the app reads 429 as a spent balance.
+        body, status, headers = (e.read() or b'{}'), e.code, e.headers
+    except Exception:
+        raise HTTPException(502, 'Could not reach Discogs.')
+
+    # Discogs reports what is left of the bucket, but only lists Location in its
+    # access-control-expose-headers, so a browser calling Discogs directly
+    # cannot read these. Through this proxy it can — and with a shared server
+    # token that count is the only way one viewer learns another has been
+    # spending it.
+    passthrough = {h: headers.get(h) for h in
+                   ('X-Discogs-Ratelimit', 'X-Discogs-Ratelimit-Remaining',
+                    'X-Discogs-Ratelimit-Used')
+                   if headers.get(h) is not None}
+    return Response(content=body, status_code=status,
+                    media_type='application/json', headers=passthrough)
+
+
+@app.get('/download')
+def download(url: str = '', title: str = 'track'):
+    if not ENABLE_DOWNLOAD:
+        raise HTTPException(404, 'Downloads are disabled on this server.')
+    if not YOUTUBE_RE.match(url):
+        raise HTTPException(400, 'Not a valid YouTube URL.')
+
+    safe_title = re.sub(r'[^\w\s.,()\'&-]', '', title).strip() or 'track'
+    tmp = tempfile.mkdtemp()
+    outtmpl = os.path.join(tmp, '%(title)s.%(ext)s')
+    try:
+        subprocess.run(
+            ytdlp_command() + youtube_args() + ['-x', '--audio-format', 'mp3',
+             '--audio-quality', '0', '--no-playlist', '-o', outtmpl, '--', url],
+            check=True, capture_output=True, text=True, timeout=180,
+            env=subprocess_env())
+    except FileNotFoundError:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise HTTPException(500, 'yt-dlp is not installed on the server.')
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise HTTPException(504, 'Download timed out.')
+    except subprocess.CalledProcessError as e:
+        shutil.rmtree(tmp, ignore_errors=True)
+        err = (e.stderr or '').strip()
+        if 'No module named' in err:
+            raise HTTPException(500, 'yt-dlp is not installed on the server.')
+        # A missing JS runtime or solver script surfaces as a bare "HTTP Error
+        # 403" on the media URL, which points nowhere useful. The real cause is
+        # in the warnings above it, so check for those first.
+        if ('challenge solving failed' in err or 'Signature solving failed' in err
+                or 'No supported JavaScript runtime' in err):
+            raise HTTPException(500, "yt-dlp cannot solve YouTube's JS challenge. "
+                                'Install a JS runtime (deno) and the yt-dlp-ejs '
+                                'solver package on the server.')
+        raise HTTPException(502, (err.splitlines()[-1] if err else 'yt-dlp failed.')[:200])
+
+    files = [f for f in os.listdir(tmp) if f.endswith('.mp3')]
+    if not files:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise HTTPException(502, 'No audio file produced (is ffmpeg installed?).')
+
+    fname = urllib.parse.quote(safe_title + '.mp3')
+    return FileResponse(
+        os.path.join(tmp, files[0]), media_type='audio/mpeg',
+        headers={'Content-Disposition': f"attachment; filename*=UTF-8\'\'{fname}"},
+        # the temp dir outlives the handler now, so it is cleaned after the send
+        background=BackgroundTask(shutil.rmtree, tmp, ignore_errors=True))
+
+
+@app.get('/')
+def index():
+    return FileResponse(APP_FILE, media_type='text/html')
+
+
+# Deliberately no static mount. The old server handed out the whole working
+# directory — server.py, db.py and a listing of data/ were all fetchable — and
+# the page needs nothing local beyond itself.
 
 
 if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    httpd = http.server.ThreadingHTTPServer((HOST, PORT), Handler)
     print(f'Serving Sample Casino on http://{HOST}:{PORT} (Ctrl+C to stop)')
-    httpd.serve_forever()
+    uvicorn.run(app, host=HOST, port=PORT, log_level='warning', access_log=False)
