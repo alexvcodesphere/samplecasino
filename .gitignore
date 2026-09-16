@@ -5,3 +5,6 @@ __pycache__/
 stable.html
 _preview-*.html
 .claude/
+
+# discogs dumps — big, rebuildable, never committed
+data/
