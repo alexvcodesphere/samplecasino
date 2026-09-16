@@ -28,20 +28,36 @@ fi
 OUT="data/discogs_${STAMP}_releases.xml.gz"
 URL="$BASE/?download=data%2F$(echo "$STAMP" | cut -c1-4)%2Fdiscogs_${STAMP}_releases.xml.gz"
 
+size_of() { [ -f "$1" ] && wc -c < "$1" | tr -d ' ' || echo 0; }
+
+# What the server says the finished file weighs. Completeness is decided by
+# comparing against this rather than by `gzip -t`: decompressing 11 GB off
+# network storage takes minutes, long enough that the retry loop starts a second
+# check on top of the first, and it answers a question curl already answered.
+EXPECT=$(curl -sIL --max-time 120 "$URL" | awk 'BEGIN{IGNORECASE=1} /^content-length:/{v=$2} END{gsub(/\r/,"",v); print v}')
+[ -n "$EXPECT" ] && echo "expecting $EXPECT bytes"
+
+if [ "$(size_of "$OUT")" = "$EXPECT" ] && [ -n "$EXPECT" ]; then
+  echo "already complete -> $OUT"
+  exit 0
+fi
+
 n=0
 while :; do
   n=$((n + 1))
-  have=0; [ -f "$OUT" ] && have=$(wc -c < "$OUT" | tr -d ' ')
+  have=$(size_of "$OUT")
   printf '%s  attempt %d — have %s bytes\n' "$(date '+%H:%M:%S')" "$n" "$have"
 
   set +e
+  # -f so a 429 body is never written: with -C - those 50 bytes of JSON would
+  # land in the middle of a resumed .gz and quietly corrupt it.
   curl -fL -C - --max-time 7200 --connect-timeout 30 -# "$URL" -o "$OUT"
   rc=$?
   set -e
 
-  now=0; [ -f "$OUT" ] && now=$(wc -c < "$OUT" | tr -d ' ')
-  if [ "$rc" -eq 0 ] && gzip -t "$OUT" 2>/dev/null; then
-    printf '%s  COMPLETE — %s bytes, gzip intact -> %s\n' "$(date '+%H:%M:%S')" "$now" "$OUT"
+  now=$(size_of "$OUT")
+  if [ -n "$EXPECT" ] && [ "$now" = "$EXPECT" ]; then
+    printf '%s  COMPLETE — %s bytes -> %s\n' "$(date '+%H:%M:%S')" "$now" "$OUT"
     exit 0
   fi
   if [ "$now" -gt "$have" ]; then

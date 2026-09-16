@@ -13,6 +13,18 @@ prepare:
     # -U matters: an aging yt-dlp is what breaks first when YouTube changes.
     - name: Install yt-dlp + the yt-dlp-ejs challenge solver (same interpreter)
       command: python3 -m pip install --user --break-system-packages -U yt-dlp yt-dlp-ejs || python3 -m pip install --user -U yt-dlp yt-dlp-ejs
+    # The sample index: every Discogs release that carries a playable video,
+    # pulled out of the monthly dump. Both steps no-op once the database exists,
+    # so a redeploy costs nothing — delete data/samples.db to force a rebuild
+    # when a new dump lands. data/ is on the shared network filesystem, so the
+    # index outlives the pod and every replica reads the same one.
+    - name: Fetch the Discogs dump (skipped once the index exists)
+      command: test -f data/samples.db || tools/fetch_dump.sh
+    - name: Build the sample index (skipped once it exists)
+      command: test -f data/samples.db || python3 tools/build_db.py data/discogs_*_releases.xml.gz -o data/samples.db
+    # 11 GB of dump has no second use, and the disk is 26 GB.
+    - name: Drop the dump, keep the index
+      command: test -f data/samples.db && rm -f data/discogs_*_releases.xml.gz || true
     # ffmpeg and deno are plain binaries, so Nix is fine for them (apt is
     # restricted on Codesphere). deno is the JS runtime yt-dlp shells out to.
     - name: Install ffmpeg via Nix (mp3 conversion for downloads)
