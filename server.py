@@ -141,8 +141,25 @@ def subprocess_env():
 app = FastAPI(title='Sample Casino', docs_url=None, redoc_url=None)
 
 # Counted per source so the split is visible at a glance: pulls answered from
-# the index versus pulls the page had to go to Discogs for.
+# the index versus pulls the page had to go to Discogs for. The timings ride
+# along because the index sits on network storage in the deployment and on an
+# SSD in development — index seeks are exactly the access pattern that differs,
+# and "it feels fine locally" is not evidence about the deployment.
 SERVED = {'pull': 0, 'counts': 0, 'discogs': 0}
+TIMING = {'pull': [], 'counts': []}      # recent query times, newest last
+
+
+def _timed(kind, ms):
+    t = TIMING[kind]
+    t.append(round(ms, 1))
+    del t[:-50]                          # a rolling window, not a growing log
+
+
+def _summary(kind):
+    t = TIMING[kind]
+    if not t:
+        return None
+    return {'n': len(t), 'last': t[-1], 'avg': round(sum(t) / len(t), 1), 'max': max(t)}
 
 
 @app.exception_handler(HTTPException)
@@ -195,7 +212,8 @@ def stats():
                 'served': SERVED}
     return {'index': True, 'url': DATABASE_URL,
             'path': getattr(INDEX, 'path', None), 'cwd': os.getcwd(),
-            'meta': INDEX.meta(), 'served': SERVED}
+            'meta': INDEX.meta(), 'served': SERVED,
+            'query_ms': {'pull': _summary('pull'), 'counts': _summary('counts')}}
 
 
 @app.get('/config')
@@ -217,6 +235,7 @@ def counts(genre: str = '', style: str = '', country: str = '', format: str = ''
     f = _filters(genre, style, country, format, yearFrom, yearTo)
     t0 = time.perf_counter()
     n = INDEX.count(f)
+    _timed('counts', (time.perf_counter() - t0) * 1000)
     SERVED['counts'] += 1
     log.info('counts %s -> %d in %.1fms', _describe(f), n, (time.perf_counter() - t0) * 1000)
     return {'count': n}
@@ -234,6 +253,7 @@ def pull(genre: str = '', style: str = '', country: str = '', format: str = '',
     t0 = time.perf_counter()
     track = INDEX.pick(f)
     ms = (time.perf_counter() - t0) * 1000
+    _timed('pull', ms)
     if track is None:
         log.info('pull  %s -> nothing in %.1fms', _describe(f), ms)
         raise HTTPException(404, 'Nothing matches these filters.')
