@@ -96,6 +96,8 @@ def _extra(rest_styles, rest_genre, key):
 class Database:
     """Engine-independent query logic. Subclasses supply the dialect."""
 
+    last_plan = ''          # which driver/path the most recent pick used
+
     # --- dialect hooks -----------------------------------------------------
     def _sql(self, sql):
         """Render '?' placeholders for this engine."""
@@ -141,6 +143,7 @@ class Database:
         src = f'{driver} d{join}' if driver != 'release' else 'release d'
         sel = cols if driver != 'release' else ', '.join('d.' + c for c in COLUMNS)
 
+        self.last_plan = f"{driver}/{'cursor' if n >= CURSOR_MIN else 'sort'}"
         if n >= CURSOR_MIN:
             import random
             hint = self._cursor_hint(driver)
@@ -159,6 +162,16 @@ class Database:
             rows = self._query(sql, args + ex_args)
 
         return _as_track(rows[0]) if rows else None
+
+    def meta(self):
+        """What the importer recorded about this index: which dump it came from,
+        when it was built, how much it kept. Surfaced so an operator can tell a
+        live index from a stale one without opening the file."""
+        try:
+            rows = self._query('SELECT key, value FROM meta', [])
+        except Exception:                       # noqa: BLE001
+            return {}
+        return {k: v for k, v in rows}
 
     def close(self):
         pass

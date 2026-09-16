@@ -33,7 +33,12 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 
+import logging
+import time
+
 import db as db_layer
+
+log = logging.getLogger('casino')
 
 PORT = int(os.environ.get('PORT', '8765'))
 # Locally bind loopback (the /download endpoint runs a subprocess, so don't expose
@@ -132,12 +137,32 @@ def subprocess_env():
 
 app = FastAPI(title='Sample Casino', docs_url=None, redoc_url=None)
 
+# Counted per source so the split is visible at a glance: pulls answered from
+# the index versus pulls the page had to go to Discogs for.
+SERVED = {'pull': 0, 'counts': 0, 'discogs': 0}
+
 
 @app.exception_handler(HTTPException)
 def as_error(request, exc):
     """The page reads `error` off a failed response; FastAPI's own shape is
     `detail`. Keeping the old key means the server change is invisible to it."""
     return JSONResponse({'error': exc.detail}, status_code=exc.status_code)
+
+
+def _describe(f):
+    """A filter in one short line, for the log."""
+    bits = []
+    if f.vinyl:
+        bits.append('vinyl')
+    if f.year_from or f.year_to:
+        bits.append(f'{f.year_from or ""}-{f.year_to or ""}')
+    if f.genre:
+        bits.append(f.genre)
+    if f.styles:
+        bits.append('+'.join(f.styles))
+    if f.country:
+        bits.append(f.country)
+    return '[' + ' '.join(bits) + ']' if bits else '[any]'
 
 
 def _filters(genre, style, country, fmt, year_from, year_to):
@@ -157,6 +182,17 @@ def health():
     return {'status': 'ok'}
 
 
+@app.get('/stats')
+def stats():
+    """What the index is, so 'is it actually serving from the database' has an
+    answer you can read rather than infer. Empty when there is no index."""
+    if INDEX is None:
+        return {'index': False,
+                'reason': f'no database at {DATABASE_URL}',
+                'served': SERVED}
+    return {'index': True, 'url': DATABASE_URL, 'meta': INDEX.meta(), 'served': SERVED}
+
+
 @app.get('/config')
 def config():
     # Whether a token exists, never the token itself.
@@ -174,7 +210,11 @@ def counts(genre: str = '', style: str = '', country: str = '', format: str = ''
     if INDEX is None:
         raise HTTPException(503, 'No sample index on this server.')
     f = _filters(genre, style, country, format, yearFrom, yearTo)
-    return {'count': INDEX.count(f)}
+    t0 = time.perf_counter()
+    n = INDEX.count(f)
+    SERVED['counts'] += 1
+    log.info('counts %s -> %d in %.1fms', _describe(f), n, (time.perf_counter() - t0) * 1000)
+    return {'count': n}
 
 
 @app.get('/pull')
@@ -185,9 +225,17 @@ def pull(genre: str = '', style: str = '', country: str = '', format: str = '',
     the page still asks Discogs for those, once."""
     if INDEX is None:
         raise HTTPException(503, 'No sample index on this server.')
-    track = INDEX.pick(_filters(genre, style, country, format, yearFrom, yearTo))
+    f = _filters(genre, style, country, format, yearFrom, yearTo)
+    t0 = time.perf_counter()
+    track = INDEX.pick(f)
+    ms = (time.perf_counter() - t0) * 1000
     if track is None:
+        log.info('pull  %s -> nothing in %.1fms', _describe(f), ms)
         raise HTTPException(404, 'Nothing matches these filters.')
+    SERVED['pull'] += 1
+    log.info('pull  %s -> %s (%s) via %s in %.1fms',
+             _describe(f), track['release'][:40], track['videoId'],
+             INDEX.last_plan, ms)
     return track
 
 
@@ -221,6 +269,10 @@ def discogs(rest: str, request: Request):
         body, status, headers = (e.read() or b'{}'), e.code, e.headers
     except Exception:
         raise HTTPException(502, 'Could not reach Discogs.')
+
+    SERVED['discogs'] += 1
+    log.info('discogs %s -> %d  (index served %d pulls, %d counts)',
+             path, status, SERVED['pull'], SERVED['counts'])
 
     # Discogs reports what is left of the bucket, but only lists Location in its
     # access-control-expose-headers, so a browser calling Discogs directly
@@ -298,4 +350,10 @@ def index():
 if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     print(f'Serving Sample Casino on http://{HOST}:{PORT} (Ctrl+C to stop)')
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s  %(message)s',
+                        datefmt='%H:%M:%S')
+    if INDEX is not None:
+        m = INDEX.meta()
+        print(f"index: {m.get('count_kept', '?')} samples from "
+              f"{m.get('source', '?')}, built {m.get('built', '?')}")
     uvicorn.run(app, host=HOST, port=PORT, log_level='warning', access_log=False)

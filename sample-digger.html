@@ -688,6 +688,11 @@ body.settings .drawer { transform: translateX(0); }
       </div>
     </div>
 
+    <div class="row" data-row="index" data-open="false">
+      <button class="row-head"><span>sample index</span><span class="val" id="v-index">—</span></button>
+      <div class="row-body"><div class="statline plain" id="index-stats"></div></div>
+    </div>
+
     <div class="row" data-row="session" data-open="false">
       <button class="row-head"><span>session</span><span class="val" id="v-session">0 pulls</span></button>
       <div class="row-body"><div class="statline plain" id="session-stats"></div></div>
@@ -759,6 +764,11 @@ $('f-grail').value = settings.grailThreshold;
    their own browser, and routing it through the server would only put it
    somewhere it doesn't belong. */
 let serverToken = false;
+let indexReady = false;          // /pull is available — set from /config at boot
+let indexMeta = null;            // what the index is, for the drawer
+/* Counted so "is it really using the database" is answerable from the page:
+   pulls the index served against pulls that fell back to searching Discogs. */
+let served = { index: 0, discogs: 0 };
 function localToken() { return token; }
 function haveToken() { return serverToken || !!localToken(); }
 function usingProxy() { return serverToken && !localToken(); }
@@ -1016,6 +1026,20 @@ function refreshCounts(f) {
   countTimer = setTimeout(async () => {
     const key = countKeyFor(target);
     if (tableCounts[key] !== undefined && tableCounts.__total != null) return;
+    if (indexReady) {
+      // A local COUNT, where this used to spend two Discogs requests per edit.
+      try {
+        const saved = filters; filters = target;
+        const p = indexParams(); filters = saved;
+        if (tableCounts.__total == null) {
+          tableCounts.__total = (await (await fetch('/counts')).json()).count;
+        }
+        tableCounts[key] = (await (await fetch('/counts?' + p)).json()).count;
+        saveTableCounts();
+      } catch (e) { /* leave the last known number up */ }
+      renderTopBar(); renderDrawer();
+      return;
+    }
     try {
       if (tableCounts.__total == null) {
         tableCounts.__total = await probeCount(new URLSearchParams({ type: 'release' }));
@@ -1126,7 +1150,77 @@ function pullFrom(rel, item, vid, videoId) {
   };
 }
 
+/* The dump carries everything the page renders except the community counts, so
+   an indexed pull is one local query plus one Discogs call — against the four
+   or so a search costs, most of them spent discovering that a release has no
+   video. Anything the index cannot answer falls through to digViaSearch(). */
+function indexParams() {
+  const p = new URLSearchParams();
+  if (filters.genre) p.set('genre', filters.genre);
+  const st = styleList(filters.style);
+  if (st.length) p.set('style', st.join(','));
+  if (filters.country.trim()) p.set('country', filters.country.trim());
+  if (filters.format) p.set('format', filters.format);
+  const r = yearRange();
+  if (r) { p.set('yearFrom', r[0]); p.set('yearTo', r[1]); }
+  return p;
+}
+
+async function digViaIndex() {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const res = await fetch('/pull?' + indexParams());
+    if (res.status === 404) return { ok: false, reason: 'empty' };
+    if (!res.ok) throw new Error('index');
+    const t = await res.json();
+
+    // The dump records the video Discogs knows about; YouTube may have removed
+    // it since. Same check the search path does, same memory of dead ones.
+    if (deadVideos.has(t.videoId) || !(await videoAlive(t.videoId))) continue;
+
+    // The one request a pull still costs. If it fails — spent balance, no token
+    // — the record is still playable, it just has no ratio to judge it by.
+    let have = 0, want = 0, cover = '';
+    try {
+      const rel = await api(API + '/releases/' + t.id);
+      have = (rel.community || {}).have || 0;
+      want = (rel.community || {}).want || 0;
+      const img = (rel.images || [])[0];
+      cover = (img && (img.uri150 || img.uri)) || '';
+    } catch (e) {
+      if (['rate', 'auth'].includes(e.message)) throw e;
+    }
+    served.index++;
+    return { ok: true, pull: {
+      artist: t.artist, title: t.release, release: t.release,
+      year: t.year, country: t.country, label: t.label, catno: t.catno,
+      videoId: t.videoId, watchUrl: t.watchUrl, discogsUrl: t.discogsUrl,
+      cover, releaseId: t.id,
+      mult: have > 0 ? want / have : null, have, want
+    } };
+  }
+  return { ok: false, reason: 'nopreview' };
+}
+
 async function digOnce() {
+  if (indexReady) {
+    if (digging) return { ok: false, reason: 'busy' };
+    digging = true; digTotal++;
+    try {
+      return await digViaIndex();
+    } catch (e) {
+      if (['rate', 'auth'].includes(e.message)) return { ok: false, reason: e.message };
+      // The index went away mid-session — carry on the old way rather than stop.
+      indexReady = false;
+      toast('Sample index unavailable — searching Discogs instead');
+    } finally {
+      digging = false;
+    }
+  }
+  served.discogs++;
+  return digViaSearch();
+}
+
+async function digViaSearch() {
   if (digging) return { ok: false, reason: 'busy' };
   digging = true;
   digTotal++;
@@ -1633,7 +1727,25 @@ function recordPull(t) {
   if (isGrail(t)) session.grails++;
   renderSession();
 }
+/* The page says where its pulls come from, so "is it really using the index"
+   is a glance rather than a guess. */
+function renderIndex() {
+  $('v-index').textContent = indexReady ? 'in use' : 'not in use';
+  if (!indexReady) {
+    $('index-stats').innerHTML = '<span>searching discogs directly \u2014 about four requests a pull</span>';
+    return;
+  }
+  const m = indexMeta || {};
+  const n = parseInt(m.count_kept || 0, 10);
+  $('index-stats').innerHTML =
+    '<span>' + (n ? n.toLocaleString() + ' samples' : 'ready') +
+    (m.source ? ' \u00b7 ' + String(m.source).replace(/^discogs_|_releases\.xml\.gz$/g, '') : '') +
+    '</span><span>this session <b>' + served.index + '</b> via index \u00b7 <b>' +
+    served.discogs + '</b> via search</span>';
+}
+
 function renderSession() {
+  renderIndex();
   $('v-session').textContent = session.pulls + (session.pulls === 1 ? ' pull' : ' pulls');
   const odds = session.pulls < 5 ? 'sampling…'
     : session.grails ? '1 in ' + Math.round(session.pulls / session.grails)
@@ -2062,6 +2174,13 @@ fetch('/config')
   .catch(() => ({}))
   .then(cfg => {
     serverToken = !!cfg.serverToken;
+    indexReady = !!cfg.index;
+    if (indexReady) {
+      fetch('/stats').then(r => r.json())
+        .then(st => { indexMeta = st.meta || null; renderIndex(); })
+        .catch(() => {});
+    }
+    renderIndex();
     // yt-dlp downloads are opt-in server-side (ENABLE_DOWNLOAD), so the button
     // only exists where the endpoint behind it does.
     $('btn-download').hidden = !cfg.downloads;
