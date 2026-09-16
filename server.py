@@ -344,7 +344,13 @@ def download(url: str = '', title: str = 'track'):
 
 @app.get('/')
 def index():
-    return FileResponse(APP_FILE, media_type='text/html')
+    # The whole app is this one file, so a cached copy is a cached *version* of
+    # the program — old javascript talking to a new server, which is impossible
+    # to tell apart from the server being broken. no-cache still lets the
+    # browser revalidate and get a 304, so this costs a round trip, not a
+    # download.
+    return FileResponse(APP_FILE, media_type='text/html',
+                        headers={'Cache-Control': 'no-cache, must-revalidate'})
 
 
 # Deliberately no static mount. The old server handed out the whole working
