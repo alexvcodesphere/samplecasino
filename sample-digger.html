@@ -785,8 +785,6 @@ function apiUrl(url) {
 /* meta:true — counts against the rate limit but not against the observed
    per-pull request cost, so the table-count probes don't distort the chip math. */
 async function api(url, opts) {
-  reqLog.push(Date.now());
-  if (!(opts && opts.meta)) reqTotal++;
   updateFuel();
   let res;
   try {
@@ -797,10 +795,9 @@ async function api(url, opts) {
     // so the browser reports a CORS/network failure rather than the 429 itself.
     // Treat an unreachable Discogs as a spent balance: it is the common cause,
     // and it costs nothing if we are wrong — the chips come back in a minute.
-    rlBlockedUntil = Date.now() + 30000; updateFuel();
     throw new Error('rate');
   }
-  if (res.status === 429) { rlBlockedUntil = Date.now() + 30000; updateFuel(); throw new Error('rate'); }
+  if (res.status === 429) throw new Error('rate');
   // 401/403 is a credential or gateway refusal, not a hiccup — worth saying so
   // rather than leaving a bare status in the console for someone to decode.
   if (res.status === 401 || res.status === 403) throw new Error('auth');
@@ -812,60 +809,47 @@ async function api(url, opts) {
    proxy — on a direct call the header isn't CORS-exposed. Worth having because
    the server's token is shared: this browser's own request log cannot see what
    other viewers have spent. */
-let serverRate = null;
-function readServerRate(res) {
-  if (!usingProxy()) return;
-  const rem = res.headers.get('X-Discogs-Ratelimit-Remaining');
-  if (rem === null) return;
-  serverRate = {
-    limit: parseInt(res.headers.get('X-Discogs-Ratelimit')) || 60,
-    remaining: parseInt(rem),
-    at: Date.now()
-  };
-}
+/* ---------- chips ----------
+   A stake, not a rate limit. Finding a record is a local query now, so there
+   is nothing left to meter: what used to be a live estimate of Discogs' rolling
+   window — measured cost per pull, the server's own header, a block timer — is
+   ten spins and a cooldown.
 
-/* ---------- chip balance ----------
-   Discogs allows 25 req/min without a token, 60 with (rolling window).
-   We track our own requests; one pull costs several (search + release lookups).
-   Chips = pulls left this minute, so the rate limit reads as a stake. */
-let reqLog = [], rlBlockedUntil = 0, reqTotal = 0, digTotal = 0;
-const MAX_PIPS = 12;             // beyond this the row stops being countable at a glance
+   The one Discogs call a pull still makes, for the have/want the dump does not
+   carry, is best effort. Refused or rate-limited, the record still plays; it
+   just arrives without a ratio to judge it by. Nothing about the spin count
+   depends on it. */
+const SPINS = 10;                // spins before the table cools off
+const COOLDOWN_MS = 15000;
+let spinsLeft = SPINS;
+let cooldownUntil = 0;
+
 function fuelInfo() {
   const now = Date.now();
-  reqLog = reqLog.filter(t => now - t < 60000);
-  let limit = haveToken() ? 60 : 25;
-  let rem = now < rlBlockedUntil ? 0 : Math.max(0, limit - reqLog.length);
-  // Discogs' own count beats ours when we have it, but only downwards: it is a
-  // snapshot, so age it by the requests we've made since and never let it talk
-  // the balance up past what we can account for.
-  if (serverRate && now - serverRate.at < 60000) {
-    const sinceSnapshot = reqLog.filter(t => t > serverRate.at).length;
-    limit = serverRate.limit || limit;
-    rem = now < rlBlockedUntil ? 0 : Math.max(0, Math.min(rem, serverRate.remaining - sinceSnapshot));
-  }
-  const perDig = digTotal ? Math.max(1, reqTotal / digTotal) : 4;
-  return { limit, rem, perDig, rolls: Math.floor(rem / perDig), max: Math.floor(limit / perDig) };
+  if (cooldownUntil && now >= cooldownUntil) { spinsLeft = SPINS; cooldownUntil = 0; }
+  return { rolls: spinsLeft, max: SPINS };
 }
-/* Seconds until the oldest request leaves the rolling window — i.e. when the
-   next chip comes back. Null while the balance is already full. */
-function refillIn(f) {
-  if (f.rolls >= f.max || !reqLog.length) return null;
-  if (Date.now() < rlBlockedUntil) return Math.ceil((rlBlockedUntil - Date.now()) / 1000);
-  return Math.max(1, Math.ceil((reqLog[0] + 60000 - Date.now()) / 1000));
+function spendSpin() {
+  spinsLeft = Math.max(0, spinsLeft - 1);
+  if (spinsLeft === 0) cooldownUntil = Date.now() + COOLDOWN_MS;
+  updateFuel();
+}
+/* Seconds until the table refills. Null while there are spins left. */
+function refillIn() {
+  if (!cooldownUntil) return null;
+  return Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
 }
 function clock(secs) { return Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0'); }
 function updateFuel() {
   const f = fuelInfo();
-  const pips = Math.max(1, Math.min(f.max, MAX_PIPS));
-  const lit = f.max ? Math.round(f.rolls / f.max * pips) : 0;
   const row = $('chip-row');
-  if (row.children.length !== pips) {
+  if (row.children.length !== SPINS) {
     row.innerHTML = '';
-    for (let i = 0; i < pips; i++) row.appendChild(document.createElement('i'));
+    for (let i = 0; i < SPINS; i++) row.appendChild(document.createElement('i'));
   }
-  [...row.children].forEach((el, i) => el.classList.toggle('o', i >= lit));
-  const secs = refillIn(f);
-  $('foot-chips').textContent = f.rolls + ' / ' + f.max;
+  [...row.children].forEach((el, i) => el.classList.toggle('o', i >= f.rolls));
+  const secs = refillIn();
+  $('foot-chips').textContent = f.rolls + ' / ' + SPINS;
   $('foot-refill').innerHTML = 'refill <b>' + (secs === null ? 'full' : clock(secs)) + '</b>';
   document.body.dataset.chips = f.rolls > 0 ? 'ok' : 'empty';
   renderTransport();
@@ -1177,8 +1161,10 @@ async function digViaIndex() {
     // it since. Same check the search path does, same memory of dead ones.
     if (deadVideos.has(t.videoId) || !(await videoAlive(t.videoId))) continue;
 
-    // The one request a pull still costs. If it fails — spent balance, no token
-    // — the record is still playable, it just has no ratio to judge it by.
+    // The one request a pull still costs, and it is allowed to fail. Discogs
+    // refusing it — spent minute, bad token, down — must not cost a spin or
+    // swallow a record we already have in hand. It arrives without a ratio;
+    // isGrail() reads a null mult as "no collection data" and says so.
     let have = 0, want = 0, cover = '';
     try {
       const rel = await api(API + '/releases/' + t.id);
@@ -1186,9 +1172,7 @@ async function digViaIndex() {
       want = (rel.community || {}).want || 0;
       const img = (rel.images || [])[0];
       cover = (img && (img.uri150 || img.uri)) || '';
-    } catch (e) {
-      if (['rate', 'auth'].includes(e.message)) throw e;
-    }
+    } catch (e) { /* no ratio for this one */ }
     served.index++;
     return { ok: true, pull: {
       artist: t.artist, title: t.release, release: t.release,
@@ -1204,11 +1188,10 @@ async function digViaIndex() {
 async function digOnce() {
   if (indexReady) {
     if (digging) return { ok: false, reason: 'busy' };
-    digging = true; digTotal++;
+    digging = true;
     try {
       return await digViaIndex();
     } catch (e) {
-      if (['rate', 'auth'].includes(e.message)) return { ok: false, reason: e.message };
       // The index went away mid-session — carry on the old way rather than stop.
       indexReady = false;
       toast('Sample index unavailable — searching Discogs instead');
@@ -1223,7 +1206,6 @@ async function digOnce() {
 async function digViaSearch() {
   if (digging) return { ok: false, reason: 'busy' };
   digging = true;
-  digTotal++;
   let lastRel = null, lastItem = null;
   try {
     let emptyRefills = 0;
@@ -1565,7 +1547,7 @@ function renderHead(t) {
 function renderTransport() {
   const f = fuelInfo();
   if (f.rolls <= 0) {
-    $('roll-sub').textContent = 'refill ' + clock(refillIn(f) || 60);
+    $('roll-sub').textContent = 'refill ' + clock(refillIn() || 0);
   } else {
     $('roll-sub').textContent = 'pull ' + (session.pulls + 1);
   }
@@ -1653,7 +1635,7 @@ function renderCycler() {
 /* ---------- a roll ---------- */
 async function roll() {
   if (beat === 'rolling') return;
-  if (currentState() === 'nochips') { toast('Out of chips — the table refills within a minute.'); return; }
+  if (currentState() === 'nochips') { toast('Out of chips — ' + (refillIn() || COOLDOWN_MS / 1000) + 's to refill.'); return; }
 
   const gen = ++rollGen;
   const back = beat;
@@ -1677,6 +1659,7 @@ async function roll() {
 function commitPull(res, back) {
   if (res.ok || res.reason === 'nopreview') {
     current = res.pull;
+    spendSpin();
     recordPull(current);
     if (res.ok) {
       setState(isGrail(current) ? 'grail' : 'reveal');
@@ -1701,9 +1684,7 @@ function commitPull(res, back) {
     toast('No results for these filters — try loosening them.');
   } else if (res.reason === 'rate') {
     setState(back);
-    toast(haveToken()
-      ? 'Out of chips — the table refills within a minute.'
-      : 'Out of chips — the table refills within a minute. A free Discogs token in settings raises the limit.');
+    toast('Discogs is rate-limiting — the record plays, the ratio may be missing.');
   } else if (res.reason === 'auth') {
     setState(back);
     toast(usingProxy()
