@@ -83,9 +83,6 @@ body[data-grail="1"]       .off-grail { display: none !important; }
 .top .filt em { font-style: normal; color: var(--fg); }
 .top .filt .dim { color: var(--fg3); }
 
-.chips { display: flex; align-items: center; gap: .5vh; }
-.chips i { width: .9vh; height: .9vh; border-radius: 50%; background: var(--acid); display: block; }
-.chips i.o { background: rgba(201,242,74,.2); }
 
 .gear {
   height: 4vh; padding: 0 1.2vw; border-radius: 2vh;
@@ -213,14 +210,12 @@ body[data-grail="1"]       .off-grail { display: none !important; }
 .roll:hover small,
 .roll:focus-visible small { opacity: .9; }
 .roll:active { transform: translateY(1px) scale(.995); }
-body[data-state="rolling"] .roll,
-body[data-chips="empty"] .roll {
+body[data-state="rolling"] .roll {
   background-color: rgba(236,233,226,.15); color: var(--fg3); pointer-events: none;
-  /* pointer-events stops hover, but focus survives — a button that was focused
-     when the chips ran out must not keep glowing as though it still works. */
+  /* pointer-events stops hover, but focus survives — a button mid-roll must not
+     keep glowing as though it were ready. */
   box-shadow: none; transform: none;
 }
-body[data-chips="empty"] .roll small { opacity: 1; }
 .ico {
   width: 6.4vh; height: 6.4vh; flex: 0 0 auto; border-radius: 50%;
   border: 1px solid rgba(236,233,226,.25); background: transparent;
@@ -402,7 +397,6 @@ body.settings .drawer { transform: translateX(0); }
   .tr-act { width: 26px; height: 26px; font-size: 15px; }
   .pager { gap: 16px; padding-top: 10px; }
   .cam { display: none; }
-  .chips i { width: 8px; height: 8px; }
   .gear { height: 34px; font-size: 12px; padding: 0 14px; gap: 6px; }
   .drawer { width: min(92vw, 420px); font-size: 13px; padding: 0; }
   .drawer-scroll { padding: 24px 20px 16px; }
@@ -530,7 +524,7 @@ body.settings .drawer { transform: translateX(0); }
 .statline b { color: var(--fg); font-weight: 400; }
 </style>
 </head>
-<body data-state="idle" data-chips="ok" data-grail="0">
+<body data-state="idle" data-grail="0">
 
 <!-- ========== top bar: reports the table, edits nothing ========== -->
 <div class="top">
@@ -541,7 +535,6 @@ body.settings .drawer { transform: translateX(0); }
     <span id="t-years">1965–1985</span>
     <span id="t-format">vinyl</span>
     <span id="t-counts" title="Everything Discogs holds → samples the current filters can land on">—</span>
-    <span class="chips" id="chip-row"></span>
     <button class="gear" id="btn-settings">settings</button>
   </div>
 </div>
@@ -688,6 +681,11 @@ body.settings .drawer { transform: translateX(0); }
       </div>
     </div>
 
+    <div class="row" data-row="index" data-open="false">
+      <button class="row-head"><span>sample index</span><span class="val" id="v-index">—</span></button>
+      <div class="row-body"><div class="statline plain" id="index-stats"></div></div>
+    </div>
+
     <div class="row" data-row="session" data-open="false">
       <button class="row-head"><span>session</span><span class="val" id="v-session">0 pulls</span></button>
       <div class="row-body"><div class="statline plain" id="session-stats"></div></div>
@@ -700,8 +698,6 @@ body.settings .drawer { transform: translateX(0); }
       <button class="apply" id="btn-apply" disabled>apply</button>
     </div>
     <div class="foot">
-      <span>chips <b id="foot-chips">—</b></span>
-      <span id="foot-refill">refill <b>—</b></span>
       <span>total samples <b id="foot-table">—</b></span>
     </div>
   </div>
@@ -759,6 +755,11 @@ $('f-grail').value = settings.grailThreshold;
    their own browser, and routing it through the server would only put it
    somewhere it doesn't belong. */
 let serverToken = false;
+let indexReady = false;          // /pull is available — set from /config at boot
+let indexMeta = null;            // what the index is, for the drawer
+/* Counted so "is it really using the database" is answerable from the page:
+   pulls the index served against pulls that fell back to searching Discogs. */
+let served = { index: 0, discogs: 0 };
 function localToken() { return token; }
 function haveToken() { return serverToken || !!localToken(); }
 function usingProxy() { return serverToken && !localToken(); }
@@ -775,9 +776,6 @@ function apiUrl(url) {
 /* meta:true — counts against the rate limit but not against the observed
    per-pull request cost, so the table-count probes don't distort the chip math. */
 async function api(url, opts) {
-  reqLog.push(Date.now());
-  if (!(opts && opts.meta)) reqTotal++;
-  updateFuel();
   let res;
   try {
     res = await fetch(apiUrl(url), { headers: apiHeaders() });
@@ -787,10 +785,9 @@ async function api(url, opts) {
     // so the browser reports a CORS/network failure rather than the 429 itself.
     // Treat an unreachable Discogs as a spent balance: it is the common cause,
     // and it costs nothing if we are wrong — the chips come back in a minute.
-    rlBlockedUntil = Date.now() + 30000; updateFuel();
     throw new Error('rate');
   }
-  if (res.status === 429) { rlBlockedUntil = Date.now() + 30000; updateFuel(); throw new Error('rate'); }
+  if (res.status === 429) throw new Error('rate');
   // 401/403 is a credential or gateway refusal, not a hiccup — worth saying so
   // rather than leaving a bare status in the console for someone to decode.
   if (res.status === 401 || res.status === 403) throw new Error('auth');
@@ -802,66 +799,11 @@ async function api(url, opts) {
    proxy — on a direct call the header isn't CORS-exposed. Worth having because
    the server's token is shared: this browser's own request log cannot see what
    other viewers have spent. */
-let serverRate = null;
-function readServerRate(res) {
-  if (!usingProxy()) return;
-  const rem = res.headers.get('X-Discogs-Ratelimit-Remaining');
-  if (rem === null) return;
-  serverRate = {
-    limit: parseInt(res.headers.get('X-Discogs-Ratelimit')) || 60,
-    remaining: parseInt(rem),
-    at: Date.now()
-  };
-}
-
-/* ---------- chip balance ----------
-   Discogs allows 25 req/min without a token, 60 with (rolling window).
-   We track our own requests; one pull costs several (search + release lookups).
-   Chips = pulls left this minute, so the rate limit reads as a stake. */
-let reqLog = [], rlBlockedUntil = 0, reqTotal = 0, digTotal = 0;
-const MAX_PIPS = 12;             // beyond this the row stops being countable at a glance
-function fuelInfo() {
-  const now = Date.now();
-  reqLog = reqLog.filter(t => now - t < 60000);
-  let limit = haveToken() ? 60 : 25;
-  let rem = now < rlBlockedUntil ? 0 : Math.max(0, limit - reqLog.length);
-  // Discogs' own count beats ours when we have it, but only downwards: it is a
-  // snapshot, so age it by the requests we've made since and never let it talk
-  // the balance up past what we can account for.
-  if (serverRate && now - serverRate.at < 60000) {
-    const sinceSnapshot = reqLog.filter(t => t > serverRate.at).length;
-    limit = serverRate.limit || limit;
-    rem = now < rlBlockedUntil ? 0 : Math.max(0, Math.min(rem, serverRate.remaining - sinceSnapshot));
-  }
-  const perDig = digTotal ? Math.max(1, reqTotal / digTotal) : 4;
-  return { limit, rem, perDig, rolls: Math.floor(rem / perDig), max: Math.floor(limit / perDig) };
-}
-/* Seconds until the oldest request leaves the rolling window — i.e. when the
-   next chip comes back. Null while the balance is already full. */
-function refillIn(f) {
-  if (f.rolls >= f.max || !reqLog.length) return null;
-  if (Date.now() < rlBlockedUntil) return Math.ceil((rlBlockedUntil - Date.now()) / 1000);
-  return Math.max(1, Math.ceil((reqLog[0] + 60000 - Date.now()) / 1000));
-}
-function clock(secs) { return Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0'); }
-function updateFuel() {
-  const f = fuelInfo();
-  const pips = Math.max(1, Math.min(f.max, MAX_PIPS));
-  const lit = f.max ? Math.round(f.rolls / f.max * pips) : 0;
-  const row = $('chip-row');
-  if (row.children.length !== pips) {
-    row.innerHTML = '';
-    for (let i = 0; i < pips; i++) row.appendChild(document.createElement('i'));
-  }
-  [...row.children].forEach((el, i) => el.classList.toggle('o', i >= lit));
-  const secs = refillIn(f);
-  $('foot-chips').textContent = f.rolls + ' / ' + f.max;
-  $('foot-refill').innerHTML = 'refill <b>' + (secs === null ? 'full' : clock(secs)) + '</b>';
-  document.body.dataset.chips = f.rolls > 0 ? 'ok' : 'empty';
-  renderTransport();
-  return f;
-}
-setInterval(updateFuel, 1000);
+/* Rolling is unmetered. There was a stake here — chips derived from Discogs'
+   rate limit, later a fixed ten spins on a trickle — and with the index
+   answering pulls locally there is nothing left for it to protect. The one
+   Discogs call a pull still makes, for have/want, is best effort: refused, the
+   record plays without a ratio. */
 
 /* ---------- filters ---------- */
 const GENRES = ['', 'Funk / Soul', 'Jazz', 'Electronic', 'Hip Hop', 'Rock', 'Latin', 'Reggae', 'Pop',
@@ -1016,6 +958,20 @@ function refreshCounts(f) {
   countTimer = setTimeout(async () => {
     const key = countKeyFor(target);
     if (tableCounts[key] !== undefined && tableCounts.__total != null) return;
+    if (indexReady) {
+      // A local COUNT, where this used to spend two Discogs requests per edit.
+      try {
+        const saved = filters; filters = target;
+        const p = indexParams(); filters = saved;
+        if (tableCounts.__total == null) {
+          tableCounts.__total = (await (await fetch('/counts')).json()).count;
+        }
+        tableCounts[key] = (await (await fetch('/counts?' + p)).json()).count;
+        saveTableCounts();
+      } catch (e) { /* leave the last known number up */ }
+      renderTopBar(); renderDrawer();
+      return;
+    }
     try {
       if (tableCounts.__total == null) {
         tableCounts.__total = await probeCount(new URLSearchParams({ type: 'release' }));
@@ -1126,10 +1082,78 @@ function pullFrom(rel, item, vid, videoId) {
   };
 }
 
+/* The dump carries everything the page renders except the community counts, so
+   an indexed pull is one local query plus one Discogs call — against the four
+   or so a search costs, most of them spent discovering that a release has no
+   video. Anything the index cannot answer falls through to digViaSearch(). */
+function indexParams() {
+  const p = new URLSearchParams();
+  if (filters.genre) p.set('genre', filters.genre);
+  const st = styleList(filters.style);
+  if (st.length) p.set('style', st.join(','));
+  if (filters.country.trim()) p.set('country', filters.country.trim());
+  if (filters.format) p.set('format', filters.format);
+  const r = yearRange();
+  if (r) { p.set('yearFrom', r[0]); p.set('yearTo', r[1]); }
+  return p;
+}
+
+async function digViaIndex() {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const res = await fetch('/pull?' + indexParams());
+    if (res.status === 404) return { ok: false, reason: 'empty' };
+    if (!res.ok) throw new Error('index');
+    const t = await res.json();
+
+    // The dump records the video Discogs knows about; YouTube may have removed
+    // it since. Same check the search path does, same memory of dead ones.
+    if (deadVideos.has(t.videoId) || !(await videoAlive(t.videoId))) continue;
+
+    // The one request a pull still costs, and it is allowed to fail. Discogs
+    // refusing it — spent minute, bad token, down — must not cost a spin or
+    // swallow a record we already have in hand. It arrives without a ratio;
+    // isGrail() reads a null mult as "no collection data" and says so.
+    let have = 0, want = 0, cover = '';
+    try {
+      const rel = await api(API + '/releases/' + t.id);
+      have = (rel.community || {}).have || 0;
+      want = (rel.community || {}).want || 0;
+      const img = (rel.images || [])[0];
+      cover = (img && (img.uri150 || img.uri)) || '';
+    } catch (e) { /* no ratio for this one */ }
+    served.index++;
+    return { ok: true, pull: {
+      artist: t.artist, title: t.release, release: t.release,
+      year: t.year, country: t.country, label: t.label, catno: t.catno,
+      videoId: t.videoId, watchUrl: t.watchUrl, discogsUrl: t.discogsUrl,
+      cover, releaseId: t.id,
+      mult: have > 0 ? want / have : null, have, want
+    } };
+  }
+  return { ok: false, reason: 'nopreview' };
+}
+
 async function digOnce() {
+  if (indexReady) {
+    if (digging) return { ok: false, reason: 'busy' };
+    digging = true;
+    try {
+      return await digViaIndex();
+    } catch (e) {
+      // The index went away mid-session — carry on the old way rather than stop.
+      indexReady = false;
+      toast('Sample index unavailable — searching Discogs instead');
+    } finally {
+      digging = false;
+    }
+  }
+  served.discogs++;
+  return digViaSearch();
+}
+
+async function digViaSearch() {
   if (digging) return { ok: false, reason: 'busy' };
   digging = true;
-  digTotal++;
   let lastRel = null, lastItem = null;
   try {
     let emptyRefills = 0;
@@ -1469,12 +1493,7 @@ function renderHead(t) {
 /* The transport's sub-label is the one place the next action is spelled out,
    so it is derived from state rather than written at each call site. */
 function renderTransport() {
-  const f = fuelInfo();
-  if (f.rolls <= 0) {
-    $('roll-sub').textContent = 'refill ' + clock(refillIn(f) || 60);
-  } else {
-    $('roll-sub').textContent = 'pull ' + (session.pulls + 1);
-  }
+  $('roll-sub').textContent = 'pull ' + (session.pulls + 1);
   const playable = !!(current && current.videoId);
   [$('btn-fav'), $('btn-copy'), $('btn-download')].forEach(b => {
     b.disabled = !playable;
@@ -1488,16 +1507,15 @@ function renderTransport() {
    <body data-state> and every visual difference is a CSS rule on that
    attribute, never a scattered boolean.
 
-   nochips is the one state that does NOT replace the beat: §4.6 says
-   "everything else stays as it was", so making it a beat would blank a
-   reveal that is still playing. It rides on <body data-chips> instead and
-   only touches ROLL and the chip dots. currentState() reports the pair as
-   one value for anything that needs to ask. */
+   There used to be a second axis here — a spent balance riding on
+   <body data-chips>, so that running out could grey ROLL without blanking a
+   reveal still playing. Rolling is unmetered now, so the beat is the whole
+   story. */
 let beat = 'idle';
 let rollGen = 0;
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 
-function currentState() { return fuelInfo().rolls <= 0 ? 'nochips' : beat; }
+function currentState() { return beat; }
 
 function setState(s) {
   beat = s;
@@ -1559,7 +1577,6 @@ function renderCycler() {
 /* ---------- a roll ---------- */
 async function roll() {
   if (beat === 'rolling') return;
-  if (currentState() === 'nochips') { toast('Out of chips — the table refills within a minute.'); return; }
 
   const gen = ++rollGen;
   const back = beat;
@@ -1607,9 +1624,7 @@ function commitPull(res, back) {
     toast('No results for these filters — try loosening them.');
   } else if (res.reason === 'rate') {
     setState(back);
-    toast(haveToken()
-      ? 'Out of chips — the table refills within a minute.'
-      : 'Out of chips — the table refills within a minute. A free Discogs token in settings raises the limit.');
+    toast('Discogs is rate-limiting — the record plays, the ratio may be missing.');
   } else if (res.reason === 'auth') {
     setState(back);
     toast(usingProxy()
@@ -1633,7 +1648,25 @@ function recordPull(t) {
   if (isGrail(t)) session.grails++;
   renderSession();
 }
+/* The page says where its pulls come from, so "is it really using the index"
+   is a glance rather than a guess. */
+function renderIndex() {
+  $('v-index').textContent = indexReady ? 'in use' : 'not in use';
+  if (!indexReady) {
+    $('index-stats').innerHTML = '<span>searching discogs directly \u2014 about four requests a pull</span>';
+    return;
+  }
+  const m = indexMeta || {};
+  const n = parseInt(m.count_kept || 0, 10);
+  $('index-stats').innerHTML =
+    '<span>' + (n ? n.toLocaleString() + ' samples' : 'ready') +
+    (m.source ? ' \u00b7 ' + String(m.source).replace(/^discogs_|_releases\.xml\.gz$/g, '') : '') +
+    '</span><span>this session <b>' + served.index + '</b> via index \u00b7 <b>' +
+    served.discogs + '</b> via search</span>';
+}
+
 function renderSession() {
+  renderIndex();
   $('v-session').textContent = session.pulls + (session.pulls === 1 ? ' pull' : ' pulls');
   const odds = session.pulls < 5 ? 'sampling…'
     : session.grails ? '1 in ' + Math.round(session.pulls / session.grails)
@@ -1872,8 +1905,7 @@ function applyAll() {
     token = draftToken;
     try { localStorage.setItem('digger_token', token); } catch (e) {}
     // A personal token moves the rate limit, and the chips are drawn from it.
-    updateFuel();
-  }
+    }
   renderDrawer();
   refreshCounts(filters);
   toast(filtersChanged
@@ -2062,11 +2094,17 @@ fetch('/config')
   .catch(() => ({}))
   .then(cfg => {
     serverToken = !!cfg.serverToken;
+    indexReady = !!cfg.index;
+    if (indexReady) {
+      fetch('/stats').then(r => r.json())
+        .then(st => { indexMeta = st.meta || null; renderIndex(); })
+        .catch(() => {});
+    }
+    renderIndex();
     // yt-dlp downloads are opt-in server-side (ENABLE_DOWNLOAD), so the button
     // only exists where the endpoint behind it does.
     $('btn-download').hidden = !cfg.downloads;
-    updateFuel();
-    renderDrawer();
+      renderDrawer();
     refreshCounts();
   });
 renderLog();
