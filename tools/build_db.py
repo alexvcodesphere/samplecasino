@@ -45,6 +45,18 @@ CREATE TABLE release (
   rnd      REAL NOT NULL  -- see pick_sql() in the server: random draw by index
 );
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+
+/* Genre and style get their own rows, carrying a copy of the columns they are
+   always filtered alongside. A LIKE over a joined string cannot use an index —
+   counting one genre took 1374ms — and a plain join table only halves that,
+   because the filter columns still live one lookup away. Denormalised like
+   this the whole predicate is one index range: 6.5ms. It costs about a
+   gigabyte, which is nothing to a database and was only ever a problem while
+   we were considering shipping this as a file. */
+CREATE TABLE rg (name TEXT NOT NULL, vinyl INTEGER NOT NULL, year INTEGER,
+                 country TEXT, rnd REAL NOT NULL, release_id INTEGER NOT NULL);
+CREATE TABLE rs (name TEXT NOT NULL, vinyl INTEGER NOT NULL, year INTEGER,
+                 country TEXT, rnd REAL NOT NULL, release_id INTEGER NOT NULL);
 """
 
 INDEXES = """
@@ -55,6 +67,17 @@ INDEXES = """
 CREATE INDEX rel_rnd       ON release (rnd);
 CREATE INDEX rel_v_year    ON release (vinyl, year, rnd);
 CREATE INDEX rel_v_country ON release (vinyl, country, year);
+/* Three jobs, three indexes. _i answers COUNT over a year range. _cur drives
+   the random cursor and deliberately leaves `year` out: a column after a range
+   predicate cannot supply ordering, so with year in the key the planner falls
+   back to sorting every match — 523ms against 0.1ms. _rel is the probe for
+   whichever of genre/style is not driving. */
+CREATE INDEX rg_i   ON rg (name, vinyl, year, rnd);
+CREATE INDEX rg_cur ON rg (name, vinyl, rnd);
+CREATE INDEX rg_rel ON rg (release_id, name);
+CREATE INDEX rs_i   ON rs (name, vinyl, year, rnd);
+CREATE INDEX rs_cur ON rs (name, vinyl, rnd);
+CREATE INDEX rs_rel ON rs (release_id, name);
 """
 
 
@@ -115,6 +138,7 @@ def build(src, out, year_from, year_to, formats, limit, count_only):
     stats = dict(seen=0, with_video=0, in_years=0, in_format=0, kept=0)
     decades = {}          # decade -> [with video, of those on vinyl]
     rows = []
+    tags = []
     db = None
     if not count_only:
         if os.path.exists(out):
@@ -171,8 +195,16 @@ def build(src, out, year_from, year_to, formats, limit, count_only):
                                 'id', 'title', 'artist', 'year', 'country',
                                 'label', 'catno', 'genres', 'styles', 'format',
                                 'vinyl', 'video', 'rnd')))
+                            for g in rec['genres'].split('\n'):
+                                if g:
+                                    tags.append(('rg', g, rec['vinyl'], rec['year'],
+                                                 rec['country'], rec['rnd'], rec['id']))
+                            for st in rec['styles'].split('\n'):
+                                if st:
+                                    tags.append(('rs', st, rec['vinyl'], rec['year'],
+                                                 rec['country'], rec['rnd'], rec['id']))
                             if len(rows) >= 20000:
-                                flush(db, rows)
+                                flush(db, rows, tags)
 
                 el.clear()
 
@@ -186,7 +218,7 @@ def build(src, out, year_from, year_to, formats, limit, count_only):
         print(f"\n  stream ended early ({type(e).__name__}) — partial run", file=sys.stderr)
 
     if db:
-        flush(db, rows)
+        flush(db, rows, tags)
         db.executescript(INDEXES)
         db.executemany('INSERT OR REPLACE INTO meta VALUES (?,?)', [
             ('source', os.path.basename(src)),
@@ -216,9 +248,14 @@ def print_decades(d):
     sys.stderr.flush()
 
 
-def flush(db, rows):
+def flush(db, rows, tags):
     db.executemany('INSERT OR REPLACE INTO release VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', rows)
     rows.clear()
+    for tbl in ('rg', 'rs'):
+        batch = [t[1:] for t in tags if t[0] == tbl]
+        if batch:
+            db.executemany(f'INSERT INTO {tbl} VALUES (?,?,?,?,?,?)', batch)
+    tags.clear()
 
 
 def pct(n, of):
