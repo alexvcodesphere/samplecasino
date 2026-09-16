@@ -244,13 +244,25 @@ class PostgresDB(Database):
 
 
 def open_db(url):
-    """sqlite:///relative/path, sqlite:////absolute/path, or postgresql://..."""
+    """sqlite:///relative/path, sqlite:////absolute/path, or postgresql://...
+
+    A relative path resolves against this file's directory, never the working
+    directory. The server opens the index at import time and only chdirs later
+    under __main__, so a cwd-relative path silently found nothing whenever the
+    process was started from somewhere else — and the app quietly fell back to
+    searching Discogs, which is indistinguishable from not having wired it up."""
     parts = urllib.parse.urlparse(url)
-    if parts.scheme in ('', 'sqlite'):
-        path = (parts.path or url).lstrip('/') if parts.scheme else url
-        if url.startswith('sqlite:////'):
-            path = '/' + path
-        return SQLiteDB(path)
     if parts.scheme in ('postgres', 'postgresql'):
         return PostgresDB(url)
-    raise ValueError(f'unsupported database url: {url}')
+    if parts.scheme not in ('', 'sqlite'):
+        raise ValueError(f'unsupported database url: {url}')
+
+    if url.startswith('sqlite:///'):
+        path = url[len('sqlite:///'):]      # sqlite:////abs leaves a leading /
+    elif url.startswith('sqlite:'):
+        path = url[len('sqlite:'):]
+    else:
+        path = url
+    if not os.path.isabs(path):
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), path)
+    return SQLiteDB(path)

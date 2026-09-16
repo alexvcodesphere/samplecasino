@@ -71,7 +71,10 @@ INDEX = None
 try:
     INDEX = db_layer.open_db(DATABASE_URL)
 except Exception as e:                        # noqa: BLE001 — any failure is the same answer
-    print(f'no sample index ({e}); the app will search Discogs directly', file=sys.stderr)
+    print(f'!! NO SAMPLE INDEX: {e}', file=sys.stderr)
+    print(f'!! url={DATABASE_URL} cwd={os.getcwd()}', file=sys.stderr)
+    print('!! the app will search Discogs directly — four requests a pull',
+          file=sys.stderr)
 
 DISCOGS_API = 'https://api.discogs.com'
 DISCOGS_TOKEN = os.environ.get('DISCOGS_TOKEN', '').strip()
@@ -188,9 +191,11 @@ def stats():
     answer you can read rather than infer. Empty when there is no index."""
     if INDEX is None:
         return {'index': False,
-                'reason': f'no database at {DATABASE_URL}',
+                'reason': f'no database at {DATABASE_URL}', 'cwd': os.getcwd(),
                 'served': SERVED}
-    return {'index': True, 'url': DATABASE_URL, 'meta': INDEX.meta(), 'served': SERVED}
+    return {'index': True, 'url': DATABASE_URL,
+            'path': getattr(INDEX, 'path', None), 'cwd': os.getcwd(),
+            'meta': INDEX.meta(), 'served': SERVED}
 
 
 @app.get('/config')
