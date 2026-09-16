@@ -819,25 +819,42 @@ async function api(url, opts) {
    carry, is best effort. Refused or rate-limited, the record still plays; it
    just arrives without a ratio to judge it by. Nothing about the spin count
    depends on it. */
-const SPINS = 10;                // spins before the table cools off
-const COOLDOWN_MS = 15000;
-let spinsLeft = SPINS;
-let cooldownUntil = 0;
+const SPINS = 10;                  // a full table
+const RECHARGE_MS = 1500;          // one spin back per tick — empty to full in 15s
+let spins = SPINS;
+let charged = Date.now();          // when the current partial spin started earning
 
 function fuelInfo() {
   const now = Date.now();
-  if (cooldownUntil && now >= cooldownUntil) { spinsLeft = SPINS; cooldownUntil = 0; }
-  return { rolls: spinsLeft, max: SPINS };
+  if (spins >= SPINS) {
+    // Full: keep the clock level with now, or an idle minute would bank a
+    // minute's worth of spins the moment one is spent.
+    charged = now;
+  } else {
+    const gained = Math.floor((now - charged) / RECHARGE_MS);
+    if (gained > 0) {
+      spins = Math.min(SPINS, spins + gained);
+      charged += gained * RECHARGE_MS;
+    }
+  }
+  return { rolls: spins, max: SPINS };
 }
 function spendSpin() {
-  spinsLeft = Math.max(0, spinsLeft - 1);
-  if (spinsLeft === 0) cooldownUntil = Date.now() + COOLDOWN_MS;
+  fuelInfo();                      // settle any earned spins before taking one
+  spins = Math.max(0, spins - 1);
   updateFuel();
 }
-/* Seconds until the table refills. Null while there are spins left. */
+/* Two different questions, so two answers. The footer counts down to a full
+   table; ROLL, which you are staring at when there is nothing to spend, counts
+   down to the next single spin. */
 function refillIn() {
-  if (!cooldownUntil) return null;
-  return Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+  if (spins >= SPINS) return null;
+  const perSpin = charged + RECHARGE_MS - Date.now();
+  return Math.max(1, Math.ceil((perSpin + (SPINS - spins - 1) * RECHARGE_MS) / 1000));
+}
+function nextSpinIn() {
+  if (spins >= SPINS) return null;
+  return Math.max(1, Math.ceil((charged + RECHARGE_MS - Date.now()) / 1000));
 }
 function clock(secs) { return Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0'); }
 function updateFuel() {
@@ -1547,7 +1564,7 @@ function renderHead(t) {
 function renderTransport() {
   const f = fuelInfo();
   if (f.rolls <= 0) {
-    $('roll-sub').textContent = 'refill ' + clock(refillIn() || 0);
+    $('roll-sub').textContent = 'next spin ' + (nextSpinIn() || 1) + 's';
   } else {
     $('roll-sub').textContent = 'pull ' + (session.pulls + 1);
   }
@@ -1635,7 +1652,7 @@ function renderCycler() {
 /* ---------- a roll ---------- */
 async function roll() {
   if (beat === 'rolling') return;
-  if (currentState() === 'nochips') { toast('Out of chips — ' + (refillIn() || COOLDOWN_MS / 1000) + 's to refill.'); return; }
+  if (currentState() === 'nochips') { toast('Out of spins — next one in ' + (nextSpinIn() || 1) + 's.'); return; }
 
   const gen = ++rollGen;
   const back = beat;
