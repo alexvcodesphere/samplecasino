@@ -779,7 +779,6 @@ async function api(url, opts) {
   let res;
   try {
     res = await fetch(apiUrl(url), { headers: apiHeaders() });
-    readServerRate(res);
   } catch (e) {
     // Over quota, Discogs answers without an Access-Control-Allow-Origin header,
     // so the browser reports a CORS/network failure rather than the 429 itself.
