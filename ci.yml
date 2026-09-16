@@ -1,32 +1,16 @@
 schemaVersion: v0.4
 prepare:
   steps:
-    # The server runs on FastAPI/uvicorn now. Same interpreter rule as below:
-    # whatever runs server.py has to be able to import these.
     - name: Install the server's own dependencies
       command: python3 -m pip install --user --break-system-packages -r requirements.txt || python3 -m pip install --user -r requirements.txt
-    # yt-dlp and yt-dlp-ejs MUST land in the same interpreter: yt-dlp imports the
-    # solver package to answer YouTube's JS challenge, and a standalone yt-dlp
-    # binary (e.g. from Nix) brings its own Python that cannot see these packages
-    # — downloads then fail with a bare HTTP 403. So install both with one pip
-    # into the python3 that runs server.py, and never as a Nix package.
-    # -U matters: an aging yt-dlp is what breaks first when YouTube changes.
     - name: Install yt-dlp + the yt-dlp-ejs challenge solver (same interpreter)
       command: python3 -m pip install --user --break-system-packages -U yt-dlp yt-dlp-ejs || python3 -m pip install --user -U yt-dlp yt-dlp-ejs
-    # The sample index: every Discogs release that carries a playable video,
-    # pulled out of the monthly dump. Both steps no-op once the database exists,
-    # so a redeploy costs nothing — delete data/samples.db to force a rebuild
-    # when a new dump lands. data/ is on the shared network filesystem, so the
-    # index outlives the pod and every replica reads the same one.
     - name: Fetch the Discogs dump (skipped once the index exists)
       command: test -f data/samples.db || tools/fetch_dump.sh
     - name: Build the sample index (skipped once it exists)
       command: test -f data/samples.db || python3 tools/build_db.py data/discogs_*_releases.xml.gz -o data/samples.db
-    # 11 GB of dump has no second use, and the disk is 26 GB.
     - name: Drop the dump, keep the index
       command: test -f data/samples.db && rm -f data/discogs_*_releases.xml.gz || true
-    # ffmpeg and deno are plain binaries, so Nix is fine for them (apt is
-    # restricted on Codesphere). deno is the JS runtime yt-dlp shells out to.
     - name: Install ffmpeg via Nix (mp3 conversion for downloads)
       command: command -v ffmpeg >/dev/null 2>&1 || nix-env -iA nixpkgs.ffmpeg || (nix-channel --update && nix-env -iA nixpkgs.ffmpeg) || true
     - name: Install deno via Nix (JS runtime for YouTube's sig/n challenge)
@@ -35,19 +19,14 @@ test:
   steps:
     - name: Syntax-check the server
       command: python3 -m py_compile server.py db.py
-    # The app boots without an index and falls back to searching Discogs, so a
-    # broken import would otherwise only show up as four requests a pull again.
     - name: Verify the server and its database layer import
       command: python3 -c "import server, db; print('server + db import OK')"
-    # Fail the deploy loudly if the download dependencies are wired up wrong.
-    # Without this the app still boots and only the Download button breaks, with
-    # a 403 that says nothing about the actual cause.
     - name: Verify yt-dlp can see the solver and a JS runtime
       command: python3 -c "import yt_dlp, yt_dlp_ejs, shutil, sys, os; assert shutil.which('deno') or os.path.exists(os.path.expanduser('~/.nix-profile/bin/deno')), 'no JS runtime (deno) found'; print('yt-dlp', yt_dlp.version.__version__, '+ solver + deno OK in', sys.executable)"
     - name: Verify ffmpeg is available (mp3 conversion)
       command: PATH="$HOME/.nix-profile/bin:$PATH" ffmpeg -version > /dev/null && echo "ffmpeg OK"
 run:
-  cratedigger:
+  sample-casino:
     healthEndpoint: http://localhost:3000/health
     plan: 201
     replicas: 1
@@ -61,11 +40,7 @@ run:
     env:
       PORT: 3000
       HOST: 0.0.0.0
-      # Optional: set DISCOGS_TOKEN as a Codesphere secret (not here — this file
-      # is committed). With it the server signs Discogs calls itself, which
-      # raises the rate limit from 25 to 60 requests a minute and is the only
-      # way search returns cover art. The token stays server-side: the page
-      # calls /discogs and never sees it.
     steps:
+      - command: python3 -m pip install --user --break-system-packages -r requirements.txt || python3 -m pip install --user -r requirements.txt
       - name: Start Sample Casino
         command: python3 server.py
